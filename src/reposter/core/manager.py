@@ -14,7 +14,7 @@ class AppManager:
     Works on Windows and Linux.
     """
 
-    def __init__(self, period: int = 10):
+    def __init__(self, period: int = 30):
         self._period = period
         self._force_run_event = asyncio.Event()
         self._stop_app_event = asyncio.Event()

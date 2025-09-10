@@ -1,12 +1,12 @@
 import asyncio
 from contextlib import suppress
 
-from src.reposter.core.manager import AppManager
+from .core.manager import AppManager
 
 
 def main():
     """Main entry point for the application script"""
-    manager = AppManager(period=10)
+    manager = AppManager(period=30)
     with suppress(KeyboardInterrupt):
         asyncio.run(manager.run())
 
