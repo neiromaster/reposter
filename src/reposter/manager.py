@@ -24,7 +24,7 @@ class AppManager:
         print("Выполняется моя задача...")
         await asyncio.sleep(1)
 
-    async def _input_watcher(self):
+    async def _input_watcher(self) -> None:
         """Asynchronously waits for the Enter key and sets the force_run_event."""
         while not self._stop_app_event.is_set():
             try:
@@ -32,8 +32,11 @@ class AppManager:
                 if not self._stop_app_event.is_set():
                     print("\nEnter нажат, запускаю задачу вне очереди...")
                     self._force_run_event.set()
+            except (asyncio.CancelledError, EOFError):
+                break
             except Exception as e:
-                print(f"⚠️ Ошибка в input_watcher: {e}")
+                if not self._stop_app_event.is_set():
+                    print(f"⚠️ Ошибка в input_watcher: {type(e).__name__}: {repr(e)}")
 
     async def _periodic_wrapper(self):
         """Wraps the periodic task and controls the loop."""
