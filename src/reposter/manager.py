@@ -1,6 +1,7 @@
 import asyncio
 import signal
 import sys
+from types import FrameType
 
 import aioconsole
 
@@ -52,7 +53,7 @@ class AppManager:
                 print(f"⚠️ Ошибка в периодической задаче: {e}")
                 await asyncio.sleep(1)
 
-    def _shutdown_handler(self, signum, frame):
+    def _shutdown_handler(self, signum: int, frame: FrameType | None) -> None:
         """Handles shutdown signals (synchronous)."""
         loop = asyncio.get_running_loop()
         loop.call_soon_threadsafe(self._stop_app_event.set)

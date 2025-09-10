@@ -1,5 +1,6 @@
 {
     "$schema": "https://raw.githubusercontent.com/microsoft/pyright/main/packages/vscode-pyright/schemas/pyrightconfig.schema.json",
+    "stubPath": "src/reposter/typings",
     "typeCheckingMode": "strict",
     "pythonVersion": "3.12",
     "pythonPlatform": "All",
