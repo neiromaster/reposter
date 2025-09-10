@@ -39,18 +39,35 @@ class AppManager:
                     print(f"⚠️ Ошибка в input_watcher: {type(e).__name__}: {repr(e)}")
 
     async def _periodic_wrapper(self):
-        """Wraps the periodic task and controls the loop."""
+        """Wraps the periodic task and controls the loop — now supports instant shutdown."""
         while not self._stop_app_event.is_set():
             try:
                 await self._my_task()
-                try:
-                    print(f"Ожидаю {self._period} секунд (или нажмите Enter для немедленного запуска)...")
-                    await asyncio.wait_for(self._force_run_event.wait(), timeout=self._period)
-                except TimeoutError:
-                    pass
 
-                if self._force_run_event.is_set():
-                    self._force_run_event.clear()
+                print(f"Ожидаю {self._period} секунд (или нажмите Enter для немедленного запуска)...")
+
+                wait_force = asyncio.create_task(self._force_run_event.wait())
+                wait_stop = asyncio.create_task(self._stop_app_event.wait())
+
+                try:
+                    _, pending = await asyncio.wait(
+                        [wait_force, wait_stop],
+                        timeout=self._period,
+                        return_when=asyncio.FIRST_COMPLETED,
+                    )
+
+                    for task in pending:
+                        task.cancel()
+
+                    if self._stop_app_event.is_set():
+                        print("⏹️  Остановка — прерываю ожидание.")
+                        break
+
+                    if self._force_run_event.is_set():
+                        self._force_run_event.clear()
+
+                except Exception as e:
+                    print(f"⚠️ Ошибка в ожидании: {e}")
 
             except Exception as e:
                 print(f"⚠️ Ошибка в периодической задаче: {e}")
