@@ -1,0 +1,54 @@
+[project]
+name = "reposter"
+version = "0.1.0"
+description = "Bridge between VK and Telegram with media handling"
+authors = [
+    { name = "Maxim (neiromaster) Gavrilenko", email = "parrysh@mail.ru" },
+]
+license = { text = "MIT" }
+readme = "README.md"
+requires-python = ">=3.12,<3.14"
+
+
+dependencies = [
+    "tgcrypto>=1.2.5,<2.0.0",
+    "kurigram>=2.2.9,<3.0.0",
+    "PyYAML>=6.0,<7.0.0",
+    "vk-api>=11.10.0,<12.0.0",
+    "python-dotenv>=1.1.1,<2.0.0",
+    "yt-dlp>=2025.8.27",
+    "emoji>=2.14.1,<3.0.0",
+    "psutil>=7.0.0,<8.0.0",
+    "pydantic>=2.11.7,<3.0.0",
+    "pydantic-settings>=2.10.1,<3.0.0",
+    "pydantic-yaml>=1.6.0,<2.0.0",
+    "aiofiles>=24.1.0,<25.0.0",
+    "httpx[http2]>=0.28.1,<1.0.0",
+    "tqdm>=4.67.1,<5.0.0",
+]
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "C4", "UP", "SIM", "ASYNC"]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.12.11,<1.0.0",
+    "pytest>=8.4.1,<9.0.0",
+    "pyinstaller>=6.15.0,<7.0.0",
+    "pyright>=1.1.404,<2.0.0",
+    "types-psutil>=7.0.0.20250822,<8.0.0",
+    "types-pyyaml>=6.0.12.20250822,<7.0.0",
+    "vk-api-stubs>=1.0.0",
+]
+
+[tool.pyright]
+typeCheckingMode = "strict"
+reportMissingImports = true
+reportMissingTypeStubs = true
+reportUnusedImport = true
+reportUnusedVariable = true
+reportPrivateUsage = true
+pythonVersion = "3.12"
