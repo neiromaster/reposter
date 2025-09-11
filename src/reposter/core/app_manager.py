@@ -5,6 +5,8 @@ from types import FrameType
 
 import aioconsole
 
+from .settings_manager import SettingsManager
+
 
 class AppManager:
     """
@@ -18,10 +20,13 @@ class AppManager:
         self._period = period
         self._force_run_event = asyncio.Event()
         self._stop_app_event = asyncio.Event()
+        self._settings_manager = SettingsManager()
 
     async def _my_task(self):
         """You can place your task's code here."""
         print("Выполняется моя задача...")
+        settings = self._settings_manager.get_settings()
+        print(settings.app.wait_time_seconds)
         await asyncio.sleep(1)
 
     async def _input_watcher(self) -> None:

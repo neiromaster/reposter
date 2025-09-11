@@ -1,7 +1,7 @@
 import asyncio
 from contextlib import suppress
 
-from .core.manager import AppManager
+from .core.app_manager import AppManager
 
 
 def main():
