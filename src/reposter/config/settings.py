@@ -23,8 +23,8 @@ class AppConfig(BaseModel):
 
 class VKConfig(BaseModel):
     domain: str = Field(..., min_length=1)
-    post_count: int = Field(..., ge=1)
-    post_source: Literal["wall", "donut"]
+    post_count: int = Field(default=10, ge=1)
+    post_source: Literal["wall", "donut"] = Field(default="wall")
 
 
 class TelegramConfig(BaseModel):
@@ -52,9 +52,9 @@ class RetryConfig(BaseModel):
 
 
 class DownloaderConfig(BaseModel):
-    browser: Literal["chrome", "firefox", "edge"]
-    output_path: Path
-    yt_dlp_opts: dict[str, Any]
+    browser: Literal["chrome", "firefox", "edge"] = Field(default="chrome")
+    output_path: Path = Field(default=Path("downloads"))
+    yt_dlp_opts: dict[str, Any] = Field(default_factory=dict)
     retries: RetryConfig = Field(default_factory=RetryConfig)
     browser_restart_wait_seconds: int = Field(default=30, ge=0)
 
@@ -71,9 +71,9 @@ class Settings(BaseSettings):
     telegram_api_id: int = Field(..., alias="TELEGRAM_API_ID")
     telegram_api_hash: str = Field(..., alias="TELEGRAM_API_HASH")
 
-    app: AppConfig
+    app: AppConfig = Field(default_factory=AppConfig)
     bindings: list[BindingConfig]
-    downloader: DownloaderConfig
+    downloader: DownloaderConfig = Field(default_factory=DownloaderConfig)
 
     model_config = SettingsConfigDict(
         env_file=".env",
