@@ -2,6 +2,7 @@ from pathlib import Path
 from typing import Optional
 
 from ..config.settings import Settings
+from ..utils.deep_diff import deep_diff
 
 
 class SettingsManager:
@@ -37,12 +38,20 @@ class SettingsManager:
                 from ..config.settings import Settings
 
                 new_settings = Settings.load()
+
+                if self._settings is not None:
+                    changes = deep_diff(self._settings, new_settings)
+                    if changes:
+                        print("📝 Обнаружены изменения в конфигурации:")
+                        for change in changes:
+                            print(f"   {change}")
+                    else:
+                        print("ℹ️ Конфиг изменился, но содержимое идентично.")
+
                 self._settings = new_settings
                 print("✅ Настройки перезагружены")
             except Exception as e:
                 print(f"❌ Ошибка при перезагрузке конфига: {e}. Использую старую версию.")
-
-        if self._settings is None:
-            raise RuntimeError("Не удалось загрузить настройки.")
-
+                if self._settings is None:
+                    raise
         return self._settings
