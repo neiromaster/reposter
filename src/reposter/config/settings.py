@@ -85,6 +85,7 @@ class Settings(BaseSettings):
         yaml_path: Path
         _data: dict[str, Any]
         _last_mtime: float
+        _file_read: bool = False
 
         def __init__(self, settings_cls: type[BaseSettings], yaml_path: Path) -> None:
             super().__init__(settings_cls)
@@ -102,7 +103,7 @@ class Settings(BaseSettings):
 
         def _read_yaml(self) -> dict[str, Any]:
             """Reads YAML only if the file has changed."""
-            if not self._file_changed() and self._data:
+            if self._file_read and not self._file_changed():
                 return self._data
 
             if self.yaml_path.exists():
@@ -112,6 +113,7 @@ class Settings(BaseSettings):
                         if isinstance(loaded, dict):
                             self._data = loaded
                             self._last_mtime = self.yaml_path.stat().st_mtime
+                            self._file_read = True
                             print("🔁 Конфиг перезагружен из YAML")
                         else:
                             self._data = {}
@@ -165,5 +167,3 @@ class Settings(BaseSettings):
 if __name__ == "__main__":
     settings = Settings.load()
     print(settings.model_dump())
-
-settings = Settings.load()

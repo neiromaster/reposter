@@ -1,8 +1,10 @@
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
-from ..config.settings import Settings
 from ..utils.deep_diff import deep_diff
+
+if TYPE_CHECKING:
+    from ..config.settings import Settings
 
 
 class SettingsManager:
@@ -33,7 +35,7 @@ class SettingsManager:
         return False
 
     def get_settings(self) -> "Settings":
-        if self._settings is None or self._file_changed():
+        if self._file_changed() or self._settings is None:
             try:
                 from ..config.settings import Settings
 
