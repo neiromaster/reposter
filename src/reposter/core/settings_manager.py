@@ -32,13 +32,17 @@ class SettingsManager:
         return False
 
     def get_settings(self) -> "Settings":
-        """
-        Returns the current settings.
-        If the file has changed, it recreates the Settings instance.
-        """
         if self._settings is None or self._file_changed():
-            from ..config.settings import Settings  # lazy import to avoid circular
+            try:
+                from ..config.settings import Settings
 
-            self._settings = Settings.load()
-            print("✅ Настройки перезагружены")
+                new_settings = Settings.load()
+                self._settings = new_settings
+                print("✅ Настройки перезагружены")
+            except Exception as e:
+                print(f"❌ Ошибка при перезагрузке конфига: {e}. Использую старую версию.")
+
+        if self._settings is None:
+            raise RuntimeError("Не удалось загрузить настройки.")
+
         return self._settings
