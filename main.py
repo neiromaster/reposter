@@ -1,15 +1,6 @@
 import asyncio
-from contextlib import suppress
 
-from src.reposter.core.manager import AppManager
-
-
-def main():
-    """Main entry point for the application script"""
-    manager = AppManager(period=10)
-    with suppress(KeyboardInterrupt):
-        asyncio.run(manager.run())
-
+from reposter.__main__ import main
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

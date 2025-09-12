@@ -28,11 +28,13 @@ dependencies = [
     "aioconsole>=0.8.1",
 ]
 
+
 [tool.ruff]
 line-length = 120
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "C4", "UP", "SIM", "ASYNC"]
+
 
 [dependency-groups]
 dev = [
@@ -44,12 +46,3 @@ dev = [
     "types-pyyaml>=6.0.12.20250822,<7.0.0",
     "vk-api-stubs>=1.0.0",
 ]
-
-[tool.pyright]
-typeCheckingMode = "strict"
-reportMissingImports = true
-reportMissingTypeStubs = true
-reportUnusedImport = true
-reportUnusedVariable = true
-reportPrivateUsage = true
-pythonVersion = "3.12"

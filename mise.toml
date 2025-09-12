@@ -19,7 +19,7 @@ depends = ["lint-fix", "format-fix"]
 run = "uv run pyright"
 
 [tasks.test-unit-with-check]
-depends = ["types-check"]
+depends = ["types-with-check"]
 run = "uv run pytest tests"
 
 [tasks.test-unit-with-fix]
@@ -28,3 +28,7 @@ run = "uv run pytest tests"
 
 [tasks.project]
 depends = ["types-with-fix", "test-unit-with-fix"]
+
+[tasks.build]
+depends = ["test-unit-with-check"]
+run = "uv run -- pyinstaller --onefile --name reposter --paths src main.py"
