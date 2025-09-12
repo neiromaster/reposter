@@ -1,0 +1,30 @@
+[tasks.lint-check]
+run = "uv run ruff check ."
+
+[tasks.lint-fix]
+run = "uv run ruff check --fix ."
+
+[tasks.format-check]
+run = "uv run ruff format --check ."
+
+[tasks.format-fix]
+run = "uv run ruff format ."
+
+[tasks.types-with-check]
+depends = ["lint-check", "format-check"]
+run = "uv run pyright"
+
+[tasks.types-with-fix]
+depends = ["lint-fix", "format-fix"]
+run = "uv run pyright"
+
+[tasks.test-unit-with-check]
+depends = ["types-check"]
+run = "uv run pytest tests"
+
+[tasks.test-unit-with-fix]
+depends = ["types-with-fix"]
+run = "uv run pytest tests"
+
+[tasks.project]
+depends = ["types-with-fix", "test-unit-with-fix"]
