@@ -23,7 +23,13 @@ class BindingTaskExecutor(BaseTaskExecutor):
 
             try:
                 print(f"  🌐 Запрашиваю посты из VK: {binding.vk.domain}")
-                # posts = await self.vk_manager.fetch_posts(binding.vk.domain, binding.vk.post_count)
+                posts = await self.vk_manager.get_vk_wall(
+                    domain=binding.vk.domain,
+                    post_count=binding.vk.post_count,
+                    post_source=binding.vk.post_source,
+                )
+
+                print(posts)
 
                 print("  🎥 Скачиваю медиа (если есть)...")
                 # await self.ytdlp_manager.download_media(posts)
