@@ -182,8 +182,3 @@ class VKManager(BaseManager):
             log(f"🔍 [VK] Собираю посты со стены: {domain}...", indent=1)
 
         return await _get_wall(params)
-
-    def __del__(self) -> None:
-        """Warn if client was not properly closed."""
-        if self._client and not self._client.is_closed:
-            log("⚠️ [VK] VKManager уничтожен, но клиент не был закрыт! Вызовите shutdown() для корректного завершения.")

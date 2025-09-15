@@ -1,12 +1,7 @@
-import os
-import sys
 
 import pytest
 
 from src.reposter.utils.cleaner import normalize_links
-
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
-
 
 # Atomic test cases to isolate functionality
 TEST_CASES = [
