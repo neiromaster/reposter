@@ -1,4 +1,3 @@
-
 import pytest
 
 from src.reposter.utils.cleaner import normalize_links

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
+from types import TracebackType
 from typing import Any, final
 
 import anyio
@@ -72,6 +73,19 @@ class VKManager(BaseManager):
             await self._client.aclose()
         self._initialized = False
         log("🌐 [VK] Клиент остановлен.")
+
+    async def __aenter__(self) -> VKManager:
+        """Enter the async context manager."""
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
+        """Exit the async context manager and shutdown the client."""
+        await self.shutdown()
 
     @final
     async def _should_retry(self, retry_state: RetryCallState) -> bool:

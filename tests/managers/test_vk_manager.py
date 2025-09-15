@@ -286,3 +286,14 @@ async def test_download_file_http_error_triggers_retry(vk_manager: VKManager, se
 
     assert result is not None
     assert route.call_count == 3
+
+
+@pytest.mark.asyncio
+async def test_async_with_support(settings: Settings):
+    manager = VKManager()
+    with patch.object(manager, "shutdown", new_callable=AsyncMock) as mock_shutdown:
+        async with manager as mgr:
+            await mgr.setup(settings)
+            assert mgr is manager
+            assert mgr._initialized  # type: ignore[reportPrivateUsage]
+        mock_shutdown.assert_awaited_once()
