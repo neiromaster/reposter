@@ -1,4 +1,4 @@
-from typing import Any, Literal
+from typing import Any, Literal, NotRequired, TypedDict
 
 from pydantic import BaseModel, Field, HttpUrl, RootModel
 
@@ -116,3 +116,21 @@ class WallGetResponse(BaseModel):
 
 class State(RootModel[dict[str, int]]):
     root: dict[str, int] = Field(default_factory=dict)
+
+
+# --- TypedDicts for raw API responses ---
+
+
+class VKErrorDict(TypedDict):
+    error_code: int
+    error_msg: str
+
+
+class WallGetResponseDict(TypedDict):
+    count: int
+    items: list[dict[str, Any]]
+
+
+class VKAPIResponseDict(TypedDict):
+    response: NotRequired[WallGetResponseDict]
+    error: NotRequired[VKErrorDict]

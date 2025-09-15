@@ -29,6 +29,8 @@ class BindingTaskExecutor(BaseTaskExecutor):
                     post_source=binding.vk.post_source,
                 )
 
+                print(posts)
+
                 log("🎥 Скачиваю медиа (если есть)...", indent=2)
                 # await self.ytdlp_manager.download_media(posts)
 

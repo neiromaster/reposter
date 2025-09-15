@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
-from typing import Any
+from typing import Any, final
 
 import anyio
 import httpx
@@ -17,7 +17,7 @@ from tenacity import (
 
 from ..config.settings import Settings
 from ..interfaces.base_manager import BaseManager
-from ..models.dto import Post, WallGetResponse
+from ..models.dto import Post, VKAPIResponseDict, WallGetResponse
 from ..utils.cleaner import normalize_links
 from ..utils.log import log
 
@@ -31,6 +31,10 @@ class VKManager(BaseManager):
 
     async def setup(self, settings: Settings) -> None:
         """Initializes the VK manager and the HTTP client."""
+        if self._initialized:
+            log("🌐 [VK] Клиент уже инициализирован. Перезапускаю...")
+            await self.shutdown()
+
         log("🌐 [VK] Инициализация VK API...")
         self._token = settings.vk_service_token
         self._shutdown_event.clear()
@@ -50,12 +54,13 @@ class VKManager(BaseManager):
             await self.setup(settings)
             return
 
-        if self._token != settings.vk_service_token:
-            log("🌐 [VK] Токен изменился, перезапускаю клиент...")
-            await self.shutdown()
-            await self.setup(settings)
-        else:
+        if self._token == settings.vk_service_token:
             log("🌐 [VK] Конфиг обновлён, токен не изменился.")
+            return
+
+        log("🌐 [VK] Токен изменился, перезапускаю клиент...")
+        await self.shutdown()
+        await self.setup(settings)
 
     async def shutdown(self) -> None:
         """Initiates shutdown and closes the client."""
@@ -68,6 +73,7 @@ class VKManager(BaseManager):
         self._initialized = False
         log("🌐 [VK] Клиент остановлен.")
 
+    @final
     async def _should_retry(self, retry_state: RetryCallState) -> bool:
         """Return True if the exception is retryable and shutdown is not requested."""
         if self._shutdown_event.is_set():
@@ -79,6 +85,7 @@ class VKManager(BaseManager):
             return False
         return isinstance(exc, (httpx.RequestError | httpx.HTTPStatusError | RuntimeError))
 
+    @final
     async def _before_sleep(self, retry_state: RetryCallState) -> None:
         """Log before sleeping."""
         if retry_state.outcome and retry_state.next_action:
@@ -99,28 +106,33 @@ class VKManager(BaseManager):
             retry_error_cls=RetryError,
         )
         async def _download() -> Path | None:
-            if self._shutdown_event.is_set():
-                raise asyncio.CancelledError("Shutdown requested")
-            assert self._client is not None
-            if not url.path:
+            if self._client is None:
+                raise RuntimeError("Client not initialized. Call setup() first.")
+            if not url.path or url.path == "/":
+                log(f"⚠️ [VK] URL не содержит пути для сохранения: {url}", indent=1)
                 return None
+
             save_path = download_path / Path(url.path).name
             save_path.parent.mkdir(exist_ok=True, parents=True)
+
             try:
                 async with self._client.stream("GET", str(url)) as resp:
                     resp.raise_for_status()
                     async with await anyio.open_file(save_path, "wb") as f:
                         async for chunk in resp.aiter_bytes():
-                            if self._shutdown_event.is_set():
-                                raise asyncio.CancelledError("Shutdown requested")
                             await f.write(chunk)
-                log(f"✅ [VK] Файл сохранен: {save_path.name}", indent=1)
+                log(f"✅ [VK] Файл сохранён: {save_path.name}", indent=1)
                 return save_path
-            except (Exception, asyncio.CancelledError) as e:
+
+            except asyncio.CancelledError:
                 if save_path.exists():
                     save_path.unlink()
-                if isinstance(e, asyncio.CancelledError):
-                    log("⏹️ [VK] Загрузка файла прервана.", indent=1)
+                log("⏹️ [VK] Загрузка файла прервана.", indent=1)
+                raise
+
+            except Exception:
+                if save_path.exists():
+                    save_path.unlink()
                 raise
 
         return await _download()
@@ -136,23 +148,25 @@ class VKManager(BaseManager):
             retry_error_cls=RetryError,
         )
         async def _get_wall(params: dict[str, Any]) -> list[Post]:
-            if self._shutdown_event.is_set():
-                raise asyncio.CancelledError("Shutdown requested")
-            assert self._client is not None
+            if self._client is None:
+                raise RuntimeError("Client not initialized. Call setup() first.")
 
             resp = await self._client.get("https://api.vk.com/method/wall.get", params=params)
             resp.raise_for_status()
-            data = resp.json()
+            data: VKAPIResponseDict = resp.json()
+
             if "error" in data:
                 raise RuntimeError(f"VK API Error: {data['error']['error_msg']}")
-            posts = WallGetResponse.model_validate(data["response"]).items
+
+            response_data = data.get("response")
+            if not response_data:
+                raise ValueError("VK API response is empty or invalid.")
+
+            posts = WallGetResponse.model_validate(response_data).items
             for post in posts:
                 if post.text:
                     post.text = normalize_links(post.text)
             return posts
-
-        if self._shutdown_event.is_set():
-            raise asyncio.CancelledError("Shutdown requested")
 
         params: dict[str, Any] = {
             "domain": domain,
@@ -160,10 +174,16 @@ class VKManager(BaseManager):
             "access_token": self._token,
             "v": "5.199",
         }
+
         if post_source == "donut":
             params["filter"] = "donut"
             log(f"🔍 [VK] Собираю посты из VK Donut: {domain}...", indent=1)
         else:
-            log(f"[VK] Собираю посты со стены: {domain}...", indent=1)
+            log(f"🔍 [VK] Собираю посты со стены: {domain}...", indent=1)
 
         return await _get_wall(params)
+
+    def __del__(self) -> None:
+        """Warn if client was not properly closed."""
+        if self._client and not self._client.is_closed:
+            log("⚠️ [VK] VKManager уничтожен, но клиент не был закрыт! Вызовите shutdown() для корректного завершения.")

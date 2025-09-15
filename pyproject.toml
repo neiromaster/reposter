@@ -47,4 +47,11 @@ dev = [
     "types-psutil>=7.0.0.20250822,<8.0.0",
     "types-pyyaml>=6.0.12.20250822,<7.0.0",
     "vk-api-stubs>=1.0.0",
+    "pytest-asyncio>=1.2.0",
+    "respx>=0.22.0",
 ]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
