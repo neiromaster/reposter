@@ -19,6 +19,7 @@ from ..config.settings import Settings
 from ..interfaces.base_manager import BaseManager
 from ..models.dto import Post, WallGetResponse
 from ..utils.cleaner import normalize_links
+from ..utils.log import log
 
 
 class VKManager(BaseManager):
@@ -30,7 +31,7 @@ class VKManager(BaseManager):
 
     async def setup(self, settings: Settings) -> None:
         """Initializes the VK manager and the HTTP client."""
-        print("🌐 [VK] Инициализация VK API...")
+        log("🌐 [VK] Инициализация VK API...")
         self._token = settings.vk_service_token
         self._shutdown_event.clear()
 
@@ -41,7 +42,7 @@ class VKManager(BaseManager):
             follow_redirects=True,
         )
         self._initialized = True
-        print("🌐 [VK] Клиент запущен и готов к работе.")
+        log("🌐 [VK] Клиент запущен и готов к работе.")
 
     async def update_config(self, settings: Settings) -> None:
         """Handles configuration updates."""
@@ -50,22 +51,22 @@ class VKManager(BaseManager):
             return
 
         if self._token != settings.vk_service_token:
-            print("🌐 [VK] Токен изменился, перезапускаю клиент...")
+            log("🌐 [VK] Токен изменился, перезапускаю клиент...")
             await self.shutdown()
             await self.setup(settings)
         else:
-            print("🌐 [VK] Конфиг обновлён, токен не изменился.")
+            log("🌐 [VK] Конфиг обновлён, токен не изменился.")
 
     async def shutdown(self) -> None:
         """Initiates shutdown and closes the client."""
         if not self._initialized:
             return
-        print("🌐 [VK] Инициирую остановку клиента...")
+        log("🌐 [VK] Инициирую остановку клиента...")
         self._shutdown_event.set()
         if self._client and not self._client.is_closed:
             await self._client.aclose()
         self._initialized = False
-        print("🌐 [VK] Клиент остановлен.")
+        log("🌐 [VK] Клиент остановлен.")
 
     async def _should_retry(self, retry_state: RetryCallState) -> bool:
         """Return True if the exception is retryable and shutdown is not requested."""
@@ -81,9 +82,10 @@ class VKManager(BaseManager):
     async def _before_sleep(self, retry_state: RetryCallState) -> None:
         """Log before sleeping."""
         if retry_state.outcome and retry_state.next_action:
-            print(
-                f"  ❌ [VK] Ошибка: {retry_state.outcome.exception()}. "
-                f"Повтор через {retry_state.next_action.sleep:.2f} c..."
+            log(
+                f"❌ [VK] Ошибка: {retry_state.outcome.exception()}. "
+                f"Повтор через {retry_state.next_action.sleep:.2f} c...",
+                indent=1,
             )
 
     async def download_file(self, url: HttpUrl, download_path: Path) -> Path | None:
@@ -112,13 +114,13 @@ class VKManager(BaseManager):
                             if self._shutdown_event.is_set():
                                 raise asyncio.CancelledError("Shutdown requested")
                             await f.write(chunk)
-                print(f"  ✅ [VK] Файл сохранен: {save_path.name}")
+                log(f"✅ [VK] Файл сохранен: {save_path.name}", indent=1)
                 return save_path
             except (Exception, asyncio.CancelledError) as e:
                 if save_path.exists():
                     save_path.unlink()
                 if isinstance(e, asyncio.CancelledError):
-                    print("  ⏹️ [VK] Загрузка файла прервана.")
+                    log("⏹️ [VK] Загрузка файла прервана.", indent=1)
                 raise
 
         return await _download()
@@ -160,8 +162,8 @@ class VKManager(BaseManager):
         }
         if post_source == "donut":
             params["filter"] = "donut"
-            print(f"  [VK] Собираю посты из VK Donut: {domain}...")
+            log(f"🔍 [VK] Собираю посты из VK Donut: {domain}...", indent=1)
         else:
-            print(f"  [VK] Собираю посты со стены: {domain}...")
+            log(f"[VK] Собираю посты со стены: {domain}...", indent=1)
 
         return await _get_wall(params)
