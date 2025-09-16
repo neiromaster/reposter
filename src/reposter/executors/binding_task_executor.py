@@ -56,7 +56,7 @@ class BindingTaskExecutor(BaseTaskExecutor):
                 # await self.ytdlp_manager.download_media(new_posts)
 
                 log(f"✈️ Публикую в Telegram каналы: {binding.telegram.channel_ids}", indent=2)
-                # await self.telegram_manager.post_to_channels(binding.telegram.channel_ids, new_posts)
+                await self.telegram_manager.post_to_channels(binding.telegram, new_posts)
 
                 await set_last_post_id(binding.vk.domain, latest_post_id_in_batch, settings.app.state_file)
 
