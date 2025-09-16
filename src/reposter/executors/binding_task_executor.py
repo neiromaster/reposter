@@ -41,43 +41,37 @@ class BindingTaskExecutor(BaseTaskExecutor):
                     post_source=binding.vk.post_source,
                 )
 
-                new_posts = [post for post in posts if post.id > last_post_id]
+                new_posts = sorted([post for post in posts if post.id > last_post_id], key=lambda p: p.date)
 
                 if not new_posts:
                     log("✅ Новых постов нет.", indent=2)
                     continue
 
-                log(f"📬 Найдено {len(new_posts)} новых постов. Начинаю обработку...", indent=2)
-                new_posts.sort(key=lambda p: p.date)
+                log(f"📬 Найдено {len(new_posts)} новых постов. Начинаю последовательную обработку...", indent=2)
 
-                latest_post_id_in_batch = new_posts[-1].id
-
-                prepared_posts: list[TelegramPost] = []
                 for post in new_posts:
                     try:
                         log(f"⚙️ Обрабатываю пост {post.id}...", indent=3)
                         prepared_post = await self.post_processor.process_post(post)
-                        prepared_posts.append(prepared_post)
+
+                        if not prepared_post.attachments and not prepared_post.text:
+                            log("⚠️ Пост пустой после обработки, пропускаю.", indent=4)
+                            await set_last_post_id(binding.vk.domain, post.id, settings.app.state_file)
+                            continue
+
+                        log(f"✈️ Публикую пост {post.id} в Telegram каналы...", indent=3)
+                        await self.telegram_manager.post_to_channels(binding.telegram, [prepared_post])
+
+                        # Обновляем ID последнего успешно опубликованного поста
+                        await set_last_post_id(binding.vk.domain, post.id, settings.app.state_file)
+                        log(f"✅ Пост {post.id} успешно обработан и опубликован.", indent=4)
+
                     except Exception as e:
-                        log(f"❌ Не удалось обработать пост {post.id}: {e}", indent=3)
+                        log(f"❌ Ошибка при обработке поста {post.id}: {e}. Пропускаю его.", indent=3)
+                        # Не обновляем last_post_id, чтобы повторить попытку в следующий раз
+                        continue
 
-                # # Write to json file instead of printing
-                # posts_as_dicts = [post.model_dump(mode="json") for post in new_posts]
-                # async with aiofiles.open("new_posts.json", "w", encoding="utf-8") as f:
-                #     await f.write(json.dumps(posts_as_dicts, indent=4, ensure_ascii=False))
-
-                if not prepared_posts:
-                    log("✅ Нет постов для публикации после обработки.", indent=2)
-                    # Still update last_post_id to not re-process failed posts
-                    await set_last_post_id(binding.vk.domain, latest_post_id_in_batch, settings.app.state_file)
-                    continue
-
-                log(f"✈️ Публикую в Telegram каналы: {binding.telegram.channel_ids}", indent=2)
-                await self.telegram_manager.post_to_channels(binding.telegram, prepared_posts)
-
-                await set_last_post_id(binding.vk.domain, latest_post_id_in_batch, settings.app.state_file)
-
-                log(f"✅ Привязка {binding.vk.domain} обработана успешно.", indent=2)
+                log(f"✅ Привязка {binding.vk.domain} обработана.", indent=2)
 
             except Exception as e:
-                log(f"❌ Ошибка при обработке привязки {binding.vk.domain}: {type(e).__name__}: {e}", indent=2)
+                log(f"❌ Критическая ошибка при получении постов для привязки {binding.vk.domain}: {e}", indent=2)
