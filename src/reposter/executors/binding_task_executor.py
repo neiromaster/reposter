@@ -1,3 +1,6 @@
+import aiofiles
+import json
+
 from ..config.settings import Settings
 from ..core.state_manager import get_last_post_id, set_last_post_id
 from ..interfaces.task_executor import BaseTaskExecutor
@@ -43,7 +46,10 @@ class BindingTaskExecutor(BaseTaskExecutor):
 
                 latest_post_id_in_batch = new_posts[-1].id
 
-                print(new_posts)
+                # Write to json file instead of printing
+                posts_as_dicts = [post.model_dump(mode='json') for post in new_posts]
+                async with aiofiles.open("new_posts.json", "w", encoding="utf-8") as f:
+                    await f.write(json.dumps(posts_as_dicts, indent=4, ensure_ascii=False))
 
                 log("🎥 Скачиваю медиа (если есть)...", indent=2)
                 # await self.ytdlp_manager.download_media(new_posts)
