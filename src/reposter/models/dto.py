@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Any, Literal, NotRequired, TypedDict
 
 from pydantic import BaseModel, Field, HttpUrl, RootModel
@@ -134,3 +135,39 @@ class WallGetResponseDict(TypedDict):
 class VKAPIResponseDict(TypedDict):
     response: NotRequired[WallGetResponseDict]
     error: NotRequired[VKErrorDict]
+
+
+# --- DTO для обработанных постов ---
+class PreparedAttachment(BaseModel):
+    """Базовая модель для обработанного вложения."""
+
+    file_path: Path
+    filename: str
+
+
+class PreparedPhotoAttachment(PreparedAttachment):
+    pass
+
+
+class PreparedVideoAttachment(PreparedAttachment):
+    width: int
+    height: int
+    thumbnail_path: Path | None = None
+
+
+class PreparedAudioAttachment(PreparedAttachment):
+    artist: str
+    title: str
+
+
+class PreparedDocumentAttachment(PreparedAttachment):
+    pass
+
+
+class TelegramPost(BaseModel):
+    """Полностью готовый к отправке пост."""
+
+    text: str
+    attachments: list[
+        PreparedPhotoAttachment | PreparedVideoAttachment | PreparedAudioAttachment | PreparedDocumentAttachment
+    ]

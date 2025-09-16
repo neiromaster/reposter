@@ -1,13 +1,11 @@
-import json
-
-import aiofiles
-
 from ..config.settings import Settings
+from ..core.post_processor import PostProcessor
 from ..core.state_manager import get_last_post_id, set_last_post_id
 from ..interfaces.task_executor import BaseTaskExecutor
 from ..managers.telegram_manager import TelegramManager
 from ..managers.vk_manager import VKManager
 from ..managers.ytdlp_manager import YTDLPManager
+from ..models.dto import TelegramPost
 from ..utils.log import log
 
 
@@ -16,10 +14,17 @@ class BindingTaskExecutor(BaseTaskExecutor):
     Implementation of business logic: processing VK → Telegram bindings.
     """
 
-    def __init__(self, vk_manager: VKManager, telegram_manager: TelegramManager, ytdlp_manager: YTDLPManager):
+    def __init__(
+        self,
+        vk_manager: VKManager,
+        telegram_manager: TelegramManager,
+        ytdlp_manager: YTDLPManager,
+        post_processor: PostProcessor,
+    ):
         self.vk_manager = vk_manager
         self.telegram_manager = telegram_manager
         self.ytdlp_manager = ytdlp_manager
+        self.post_processor = post_processor
 
     async def execute(self, settings: Settings) -> None:
         log(f"📋 Обрабатываю {len(settings.bindings)} привязок...")
@@ -42,21 +47,33 @@ class BindingTaskExecutor(BaseTaskExecutor):
                     log("✅ Новых постов нет.", indent=2)
                     continue
 
-                log(f"📬 Найдено {len(new_posts)} новых постов.", indent=2)
+                log(f"📬 Найдено {len(new_posts)} новых постов. Начинаю обработку...", indent=2)
                 new_posts.sort(key=lambda p: p.date)
 
                 latest_post_id_in_batch = new_posts[-1].id
 
-                # Write to json file instead of printing
-                posts_as_dicts = [post.model_dump(mode="json") for post in new_posts]
-                async with aiofiles.open("new_posts.json", "w", encoding="utf-8") as f:
-                    await f.write(json.dumps(posts_as_dicts, indent=4, ensure_ascii=False))
+                prepared_posts: list[TelegramPost] = []
+                for post in new_posts:
+                    try:
+                        log(f"⚙️ Обрабатываю пост {post.id}...", indent=3)
+                        prepared_post = await self.post_processor.process_post(post)
+                        prepared_posts.append(prepared_post)
+                    except Exception as e:
+                        log(f"❌ Не удалось обработать пост {post.id}: {e}", indent=3)
 
-                log("🎥 Скачиваю медиа (если есть)...", indent=2)
-                # await self.ytdlp_manager.download_media(new_posts)
+                # # Write to json file instead of printing
+                # posts_as_dicts = [post.model_dump(mode="json") for post in new_posts]
+                # async with aiofiles.open("new_posts.json", "w", encoding="utf-8") as f:
+                #     await f.write(json.dumps(posts_as_dicts, indent=4, ensure_ascii=False))
+
+                if not prepared_posts:
+                    log("✅ Нет постов для публикации после обработки.", indent=2)
+                    # Still update last_post_id to not re-process failed posts
+                    await set_last_post_id(binding.vk.domain, latest_post_id_in_batch, settings.app.state_file)
+                    continue
 
                 log(f"✈️ Публикую в Telegram каналы: {binding.telegram.channel_ids}", indent=2)
-                await self.telegram_manager.post_to_channels(binding.telegram, new_posts)
+                await self.telegram_manager.post_to_channels(binding.telegram, prepared_posts)
 
                 await set_last_post_id(binding.vk.domain, latest_post_id_in_batch, settings.app.state_file)
 

@@ -20,7 +20,6 @@ from tenacity import (
 from ..config.settings import Settings
 from ..interfaces.base_manager import BaseManager
 from ..models.dto import Post, VKAPIResponseDict, WallGetResponse
-from ..utils.cleaner import normalize_links
 from ..utils.log import log
 
 
@@ -180,9 +179,9 @@ class VKManager(BaseManager):
                 raise ValueError("VK API response is empty or invalid.")
 
             posts = WallGetResponse.model_validate(response_data).items
-            for post in posts:
-                if post.text:
-                    post.text = normalize_links(post.text)
+            # for post in posts:
+            #     if post.text:
+            #         post.text = normalize_links(post.text)
             return posts
 
         params: dict[str, Any] = {

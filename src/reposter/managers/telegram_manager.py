@@ -2,8 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from asyncio import Event
-from collections.abc import Callable
-from pathlib import Path
+from collections.abc import Callable, Sequence
 from types import TracebackType
 from typing import Any
 
@@ -20,7 +19,14 @@ from tqdm import tqdm
 
 from ..config.settings import Settings, TelegramConfig
 from ..interfaces.base_manager import BaseManager
-from ..models.dto import Post
+from ..models.dto import (
+    PreparedAttachment,
+    PreparedAudioAttachment,
+    PreparedDocumentAttachment,
+    PreparedPhotoAttachment,
+    PreparedVideoAttachment,
+    TelegramPost,
+)
 from ..utils.log import log
 
 
@@ -101,13 +107,14 @@ class TelegramManager(BaseManager):
         """Exit the async context manager and shutdown the client."""
         await self.shutdown()
 
-    async def post_to_channels(self, tg_config: TelegramConfig, posts: list[Post]) -> None:
-        """Placeholder for posting to channels."""
-        log(f"✈️ Начало публикации в каналы: {tg_config.channel_ids}")
-        # This is a placeholder. The actual implementation will go here.
-        # It will involve iterating through posts, getting downloaded
-        # media paths from another manager, and calling self.send_media.
-        await asyncio.sleep(0)  # Simulate async work
+    async def post_to_channels(self, tg_config: TelegramConfig, posts: list[TelegramPost]) -> None:
+        """Sends processed posts to Telegram channels."""
+        log(f"✈️ Начало публикации {len(posts)} постов в каналы: {tg_config.channel_ids}", indent=3)
+
+        for post in posts:
+            for channel_id in tg_config.channel_ids:
+                log(f"Отправка поста в {channel_id}...", indent=4)
+                await self.send_media(channel=channel_id, attachments=post.attachments, caption=post.text)
 
     def _create_progress_callback(self, indent: int) -> Callable[[int, int], None]:
         def _progress_hook(current: int, total: int) -> None:
@@ -132,18 +139,20 @@ class TelegramManager(BaseManager):
 
         return _progress_hook
 
-    async def send_media(self, channel: int | str, files: list[Path], caption: str = "", max_retries: int = 3) -> None:
+    async def send_media(
+        self, channel: int | str, attachments: Sequence[PreparedAttachment], caption: str = "", max_retries: int = 3
+    ) -> None:
         """
         Sends media (single or album) to a Telegram channel by first uploading to "Saved Messages".
         """
         assert self._client is not None, "TelegramManager is not started"
 
-        await self._send_via_saved(channel, files, caption, max_retries)
+        await self._send_via_saved(channel, attachments, caption, max_retries)
 
     async def _send_via_saved(
         self,
         channel: int | str,
-        files: list[Path],
+        attachments: Sequence[PreparedAttachment],
         caption: str,
         max_retries: int,
     ) -> None:
@@ -169,39 +178,56 @@ class TelegramManager(BaseManager):
         uploaded_items: list[InputMediaPhoto | InputMediaVideo | InputMediaAudio | InputMediaDocument] = []
         temp_message_ids: list[int] = []
 
-        for file_path in files:
-            suffix = file_path.suffix.lower()
+        for attachment in attachments:
             attempt = 0
             while attempt < max_retries:
                 try:
-                    log(f"⬆️ Загрузка {file_path.name} в Избранное...", indent=4)
+                    log(f"⬆️ Загрузка {attachment.filename} в Избранное...", indent=4)
                     msg: Message | None = None
                     media_object: InputMediaPhoto | InputMediaVideo | InputMediaAudio | InputMediaDocument | None = None
 
-                    if suffix in [".jpg", ".jpeg", ".png", ".webp"]:
-                        msg = await self._client.send_photo(  # type: ignore[reportUnknownMemberType]
-                            chat_id="me", photo=str(file_path), progress=self._create_progress_callback(indent=4)
-                        )
-                        if msg and msg.photo:
-                            media_object = InputMediaPhoto(media=msg.photo.file_id)
+                    progress_callback = self._create_progress_callback(indent=4)
 
-                    elif suffix in [".mp4", ".mov", ".mkv"]:
-                        msg = await self._client.send_video(  # type: ignore[reportUnknownMemberType]
-                            chat_id="me", video=str(file_path), progress=self._create_progress_callback(indent=4)
-                        )
+                    if isinstance(attachment, PreparedVideoAttachment):
+                        video_kwargs: dict[str, Any] = {
+                            "video": str(attachment.file_path),
+                            "file_name": attachment.filename,
+                            "width": attachment.width,
+                            "height": attachment.height,
+                            "progress": progress_callback,
+                        }
+                        if attachment.thumbnail_path:
+                            video_kwargs["thumb"] = str(attachment.thumbnail_path)
+
+                        msg = await self._client.send_video(chat_id="me", **video_kwargs)  # type: ignore[reportUnknownMemberType]
                         if msg and msg.video:
                             media_object = InputMediaVideo(media=msg.video.file_id)
 
-                    elif suffix in [".mp3", ".ogg", ".wav", ".flac", ".m4a"]:
+                    elif isinstance(attachment, PreparedAudioAttachment):
                         msg = await self._client.send_audio(  # type: ignore[reportUnknownMemberType]
-                            chat_id="me", audio=str(file_path), progress=self._create_progress_callback(indent=4)
+                            chat_id="me",
+                            audio=str(attachment.file_path),
+                            file_name=attachment.filename,
+                            performer=attachment.artist,
+                            title=attachment.title,
+                            progress=progress_callback,
                         )
                         if msg and msg.audio:
                             media_object = InputMediaAudio(media=msg.audio.file_id)
 
-                    else:  # Treat as a document
+                    elif isinstance(attachment, PreparedPhotoAttachment):
+                        msg = await self._client.send_photo(  # type: ignore[reportUnknownMemberType]
+                            chat_id="me", photo=str(attachment.file_path), progress=progress_callback
+                        )
+                        if msg and msg.photo:
+                            media_object = InputMediaPhoto(media=msg.photo.file_id)
+
+                    elif isinstance(attachment, PreparedDocumentAttachment):
                         msg = await self._client.send_document(  # type: ignore[reportUnknownMemberType]
-                            chat_id="me", document=str(file_path), progress=self._create_progress_callback(indent=4)
+                            chat_id="me",
+                            document=str(attachment.file_path),
+                            file_name=attachment.filename,
+                            progress=progress_callback,
                         )
                         if msg and msg.document:
                             media_object = InputMediaDocument(media=msg.document.file_id)
