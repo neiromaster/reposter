@@ -165,8 +165,8 @@ class TelegramManager(BaseManager):
             caption_to_send = ""  # Caption will be handled later
             text_to_send_separately = caption
 
-        # Step 1: Upload all media and store them with their type, preserving order
-        uploaded_items: list[tuple[str, InputMediaPhoto | InputMediaVideo | InputMediaAudio | InputMediaDocument]] = []
+        # Step 1: Upload all media and store them, preserving order
+        uploaded_items: list[InputMediaPhoto | InputMediaVideo | InputMediaAudio | InputMediaDocument] = []
         temp_message_ids: list[int] = []
 
         for file_path in files:
@@ -176,11 +176,9 @@ class TelegramManager(BaseManager):
                 try:
                     log(f"⬆️ Загрузка {file_path.name} в Избранное...", indent=4)
                     msg: Message | None = None
-                    media_type_str = ""
-                    media_object = None
+                    media_object: InputMediaPhoto | InputMediaVideo | InputMediaAudio | InputMediaDocument | None = None
 
                     if suffix in [".jpg", ".jpeg", ".png", ".webp"]:
-                        media_type_str = "photo"
                         msg = await self._client.send_photo(  # type: ignore[reportUnknownMemberType]
                             chat_id="me", photo=str(file_path), progress=self._create_progress_callback(indent=4)
                         )
@@ -188,7 +186,6 @@ class TelegramManager(BaseManager):
                             media_object = InputMediaPhoto(media=msg.photo.file_id)
 
                     elif suffix in [".mp4", ".mov", ".mkv"]:
-                        media_type_str = "video"
                         msg = await self._client.send_video(  # type: ignore[reportUnknownMemberType]
                             chat_id="me", video=str(file_path), progress=self._create_progress_callback(indent=4)
                         )
@@ -196,7 +193,6 @@ class TelegramManager(BaseManager):
                             media_object = InputMediaVideo(media=msg.video.file_id)
 
                     elif suffix in [".mp3", ".ogg", ".wav", ".flac", ".m4a"]:
-                        media_type_str = "audio"
                         msg = await self._client.send_audio(  # type: ignore[reportUnknownMemberType]
                             chat_id="me", audio=str(file_path), progress=self._create_progress_callback(indent=4)
                         )
@@ -204,7 +200,6 @@ class TelegramManager(BaseManager):
                             media_object = InputMediaAudio(media=msg.audio.file_id)
 
                     else:  # Treat as a document
-                        media_type_str = "document"
                         msg = await self._client.send_document(  # type: ignore[reportUnknownMemberType]
                             chat_id="me", document=str(file_path), progress=self._create_progress_callback(indent=4)
                         )
@@ -213,7 +208,7 @@ class TelegramManager(BaseManager):
 
                     if msg and msg.id and media_object:
                         temp_message_ids.append(msg.id)
-                        uploaded_items.append((media_type_str, media_object))
+                        uploaded_items.append(media_object)
                     break  # Success
 
                 except FloodWait as e:
@@ -233,31 +228,31 @@ class TelegramManager(BaseManager):
         # Step 2: Assign caption according to priority
         caption_assigned = False
         # Priority 1: Photo or Video
-        for type_str, media in uploaded_items:
-            if type_str in ["photo", "video"]:
+        for media in uploaded_items:
+            if isinstance(media, (InputMediaPhoto | InputMediaVideo)):
                 media.caption = caption_to_send
                 caption_assigned = True
                 break
         # Priority 2: Audio
         if not caption_assigned:
-            for type_str, media in uploaded_items:
-                if type_str == "audio":
+            for media in uploaded_items:
+                if isinstance(media, InputMediaAudio):
                     media.caption = caption_to_send
                     caption_assigned = True
                     break
         # Priority 3: Document
         if not caption_assigned:
-            for type_str, media in uploaded_items:
-                if type_str == "document":
+            for media in uploaded_items:
+                if isinstance(media, InputMediaDocument):
                     media.caption = caption_to_send
                     break
 
         # Step 3: Group and send
-        photo_video_group: list[InputMediaPhoto | InputMediaVideo] = [
-            media for type_str, media in uploaded_items if type_str in ["photo", "video"]
-        ]  # type: ignore
-        audio_group: list[InputMediaAudio] = [media for type_str, media in uploaded_items if type_str == "audio"]  # type: ignore
-        doc_group: list[InputMediaDocument] = [media for type_str, media in uploaded_items if type_str == "document"]  # type: ignore
+        photo_video_group = [
+            media for media in uploaded_items if isinstance(media, (InputMediaPhoto | InputMediaVideo))
+        ]
+        audio_group = [media for media in uploaded_items if isinstance(media, InputMediaAudio)]
+        doc_group = [media for media in uploaded_items if isinstance(media, InputMediaDocument)]
 
         try:
             if photo_video_group:
