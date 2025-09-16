@@ -1,3 +1,4 @@
+from types import TracebackType
 from typing import Any
 
 from ..config.settings import Settings
@@ -39,3 +40,16 @@ class YTDLPManager(BaseManager):
         print("🎥 [YTDLP] Завершение работы...")
         # close sessions, save cache, etc.
         self._initialized = False
+
+    async def __aenter__(self) -> "YTDLPManager":
+        """Enter the async context manager."""
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
+        """Exit the async context manager and shutdown the client."""
+        await self.shutdown()

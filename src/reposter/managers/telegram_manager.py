@@ -1,3 +1,4 @@
+from types import TracebackType
 from typing import Any
 
 from ..config.settings import Settings
@@ -42,3 +43,16 @@ class TelegramManager(BaseManager):
         print("✈️ [Telegram] Завершение работы...")
         # if self._client: await self._client.stop()
         self._initialized = False
+
+    async def __aenter__(self) -> "TelegramManager":
+        """Enter the async context manager."""
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
+        """Exit the async context manager and shutdown the client."""
+        await self.shutdown()

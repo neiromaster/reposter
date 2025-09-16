@@ -2,31 +2,16 @@ import asyncio
 import sys
 from pathlib import Path
 
-from .core.app_manager import AppManager
-from .executors.binding_task_executor import BindingTaskExecutor
-from .managers.telegram_manager import TelegramManager
-from .managers.vk_manager import VKManager
-from .managers.ytdlp_manager import YTDLPManager
+from .composition import DefaultAppComposer
+from .interfaces.app_composer import AppComposer
 
 
-async def main():
+async def main(composer: AppComposer):
     try:
         if not Path("config.yaml").exists():
             raise FileNotFoundError("config.yaml не найден")
 
-        ytdlp_manager = YTDLPManager()
-        vk_manager = VKManager()
-        telegram_manager = TelegramManager()
-
-        task_executor = BindingTaskExecutor(
-            vk_manager=vk_manager,
-            telegram_manager=telegram_manager,
-            ytdlp_manager=ytdlp_manager,
-        )
-
-        managers = [ytdlp_manager, vk_manager, telegram_manager]
-        app = AppManager(managers=managers, task_executor=task_executor)
-
+        app = composer.compose_app()
         await app.run()
 
     except Exception as e:
@@ -35,4 +20,5 @@ async def main():
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    composer = DefaultAppComposer()
+    asyncio.run(main(composer))

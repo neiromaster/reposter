@@ -2,16 +2,18 @@ import asyncio
 import signal
 import sys
 from collections.abc import Sequence
+from contextlib import AsyncExitStack
 from typing import Any
 
 import aioconsole
 
+from ..interfaces.app_manager import BaseAppManager
 from ..interfaces.base_manager import BaseManager
 from ..interfaces.task_executor import BaseTaskExecutor
 from .settings_manager import SettingsManager
 
 
-class AppManager:
+class AppManager(BaseAppManager):
     def __init__(
         self,
         managers: Sequence[BaseManager],
@@ -103,32 +105,34 @@ class AppManager:
         """Main loop - manages the lifecycle, but not the business logic."""
         settings = self._settings_manager.get_settings()
 
-        print("🔌 Инициализация менеджеров...")
-        for manager in self._managers:
-            await manager.setup(settings)
-
         self._setup_signal_handlers()
         print("🚀 Приложение запущено. Нажмите Enter для запуска задачи или Ctrl+C для выхода.")
 
-        try:
-            while not self._stop_app_event.is_set():
-                settings = self._settings_manager.get_settings()
-                for manager in self._managers:
-                    await manager.update_config(settings)
-
-                try:
-                    async with asyncio.TaskGroup() as tg:
-                        tg.create_task(self._input_watcher())
-                        tg.create_task(self._periodic_wrapper())
-                        await self._stop_app_event.wait()
-                except* Exception as eg:
-                    for exc in eg.exceptions:
-                        if not self._stop_app_event.is_set():
-                            print(f"💥 Перехвачено исключение в задаче: {type(exc).__name__}: {exc}")
-                    if not self._stop_app_event.is_set():
-                        print("🔄 Возвращаюсь в режим ожидания...")
-        finally:
-            print("🔌 Завершение работы менеджеров...")
+        async with AsyncExitStack() as stack:
+            print("🔌 Инициализация менеджеров...")
             for manager in self._managers:
-                await manager.shutdown()
-            print("✅ Приложение остановлено.")
+                await manager.setup(settings)
+                await stack.enter_async_context(manager)
+            print("✅ Менеджеры инициализированы.")
+
+            try:
+                while not self._stop_app_event.is_set():
+                    settings = self._settings_manager.get_settings()
+                    for manager in self._managers:
+                        await manager.update_config(settings)
+
+                    try:
+                        async with asyncio.TaskGroup() as tg:
+                            tg.create_task(self._input_watcher())
+                            tg.create_task(self._periodic_wrapper())
+                            await self._stop_app_event.wait()
+                    except* Exception as eg:
+                        for exc in eg.exceptions:
+                            if not self._stop_app_event.is_set():
+                                print(f"💥 Перехвачено исключение в задаче: {type(exc).__name__}: {exc}")
+                        if not self._stop_app_event.is_set():
+                            print("🔄 Возвращаюсь в режим ожидания...")
+            finally:
+                print("🔌 Завершение работы...")
+
+        print("✅ Приложение остановлено.")

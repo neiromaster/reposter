@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from types import TracebackType
 
 from ..config.settings import Settings
 
@@ -22,4 +23,19 @@ class BaseManager(ABC):
     @abstractmethod
     async def shutdown(self) -> None:
         """Called on application shutdown."""
+        pass
+
+    @abstractmethod
+    async def __aenter__(self) -> "BaseManager":
+        """Enter the async context manager."""
+        pass
+
+    @abstractmethod
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
+        """Exit the async context manager and shutdown the client."""
         pass

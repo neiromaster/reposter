@@ -1,0 +1,23 @@
+from .core.app_manager import AppManager
+from .executors.binding_task_executor import BindingTaskExecutor
+from .interfaces.app_composer import AppComposer
+from .interfaces.app_manager import BaseAppManager
+from .managers.telegram_manager import TelegramManager
+from .managers.vk_manager import VKManager
+from .managers.ytdlp_manager import YTDLPManager
+
+
+class DefaultAppComposer(AppComposer):
+    def compose_app(self) -> BaseAppManager:
+        ytdlp_manager = YTDLPManager()
+        vk_manager = VKManager()
+        telegram_manager = TelegramManager()
+
+        task_executor = BindingTaskExecutor(
+            vk_manager=vk_manager,
+            telegram_manager=telegram_manager,
+            ytdlp_manager=ytdlp_manager,
+        )
+
+        managers = [ytdlp_manager, vk_manager, telegram_manager]
+        return AppManager(managers=managers, task_executor=task_executor)
