@@ -112,69 +112,51 @@ class TelegramManager(BaseManager):
         log(f"✈️ Начало публикации {len(posts)} постов в каналы: {tg_config.channel_ids}", indent=3)
 
         for post in posts:
+            uploaded_items, temp_message_ids = await self._upload_media_to_saved(post.attachments)
+
+            if not uploaded_items:
+                if post.text:
+                    log(" Медиа не найдено, отправляю только текст...", indent=4)
+                    for channel_id in tg_config.channel_ids:
+                        await self._send_text_to_channel(channel_id, post.text)
+                else:
+                    log("⚠️ Пост пуст (нет ни медиа, ни текста), пропускаю.", indent=4)
+                continue
+
+            caption, text_to_send_separately = self._prepare_caption(post.text)
+            self._assign_caption_to_group(uploaded_items, caption)
+
             for channel_id in tg_config.channel_ids:
-                log(f"Отправка поста в {channel_id}...", indent=4)
-                await self.send_media(channel=channel_id, attachments=post.attachments, caption=post.text)
+                log(f"Пересылка поста в {channel_id}...", indent=4)
+                await self._forward_media_to_channel(channel_id, uploaded_items, text_to_send_separately)
 
-    def _create_progress_callback(self, indent: int) -> Callable[[int, int], None]:
-        def _progress_hook(current: int, total: int) -> None:
-            current_mb = current / (1024 * 1024)
-            total_mb = total / (1024 * 1024) if total else 0
+            if temp_message_ids:
+                await self._delete_temp_messages(temp_message_ids)
 
-            if self._pbar is None:
-                self._pbar = tqdm(
-                    total=total_mb,
-                    unit="MB",
-                    unit_scale=False,
-                    desc="  " * indent + "🚀 ",
-                    ncols=80,
-                    bar_format="{desc}{bar}| {n:.0f} / {total:.0f} {unit} | {elapsed} < {remaining} | {rate_fmt}{postfix}",  # noqa: E501
-                )
-
-            self._pbar.update(current_mb - self._pbar.n)
-
-            if current >= total:
-                self._pbar.close()
-                self._pbar = None
-
-        return _progress_hook
-
-    async def send_media(
-        self, channel: int | str, attachments: Sequence[PreparedAttachment], caption: str = "", max_retries: int = 3
-    ) -> None:
-        """
-        Sends media (single or album) to a Telegram channel by first uploading to "Saved Messages".
-        """
-        assert self._client is not None, "TelegramManager is not started"
-
-        await self._send_via_saved(channel, attachments, caption, max_retries)
-
-    async def _send_via_saved(
-        self,
-        channel: int | str,
-        attachments: Sequence[PreparedAttachment],
-        caption: str,
-        max_retries: int,
-    ) -> None:
-        """
-        Uploads media to "Saved Messages", then sends it to the target channel.
-        Correctly groups media based on Telegram's rules and preserves order.
-        """
-        assert self._client is not None
-
+    def _prepare_caption(self, caption: str) -> tuple[str, str | None]:
+        """Splits caption if it's too long for a media group."""
         TELEGRAM_CAPTION_LIMIT = 4096
-        caption_to_send = caption
-        text_to_send_separately = None
-
         if len(caption) > TELEGRAM_CAPTION_LIMIT:
             log(
-                f"📝 Подпись слишком длинная ({len(caption)} символов). Она будет отправлена отдельным сообщением.",
-                indent=3,
+                f"📝 Подпись слишком длинная ({len(caption)} символов). Будет отправлена отдельным сообщением.",
+                indent=5,
             )
-            caption_to_send = ""  # Caption will be handled later
-            text_to_send_separately = caption
+            return "", caption
+        return caption, None
 
-        # Step 1: Upload all media and store them, preserving order
+    async def _send_text_to_channel(self, channel_id: int | str, text: str) -> None:
+        """Sends a simple text message to a channel."""
+        assert self._client is not None
+        try:
+            await self._client.send_message(chat_id=channel_id, text=text)
+        except Exception as e:
+            log(f"❌ Ошибка при отправке текста в канал {channel_id}: {e}", indent=5)
+
+    async def _upload_media_to_saved(
+        self, attachments: Sequence[PreparedAttachment], max_retries: int = 3
+    ) -> tuple[list[InputMediaPhoto | InputMediaVideo | InputMediaAudio | InputMediaDocument], list[int]]:
+        """Uploads media to "Saved Messages" and returns media objects and message IDs."""
+        assert self._client is not None
         uploaded_items: list[InputMediaPhoto | InputMediaVideo | InputMediaAudio | InputMediaDocument] = []
         temp_message_ids: list[int] = []
 
@@ -182,11 +164,10 @@ class TelegramManager(BaseManager):
             attempt = 0
             while attempt < max_retries:
                 try:
-                    log(f"⬆️ Загрузка {attachment.filename} в Избранное...", indent=4)
+                    log(f"⬆️ Загрузка {attachment.filename} в Избранное...", indent=5)
                     msg: Message | None = None
                     media_object: InputMediaPhoto | InputMediaVideo | InputMediaAudio | InputMediaDocument | None = None
-
-                    progress_callback = self._create_progress_callback(indent=4)
+                    progress_callback = self._create_progress_callback(indent=5)
 
                     if isinstance(attachment, PreparedVideoAttachment):
                         video_kwargs: dict[str, Any] = {
@@ -198,7 +179,6 @@ class TelegramManager(BaseManager):
                         }
                         if attachment.thumbnail_path:
                             video_kwargs["thumb"] = str(attachment.thumbnail_path)
-
                         msg = await self._client.send_video(chat_id="me", **video_kwargs)  # type: ignore[reportUnknownMemberType]
                         if msg and msg.video:
                             media_object = InputMediaVideo(media=msg.video.file_id)
@@ -240,97 +220,123 @@ class TelegramManager(BaseManager):
                 except FloodWait as e:
                     await self._handle_floodwait(e)
                 except RPCError as e:
-                    log(f"❌ Ошибка Telegram API: {type(e).__name__} — {e}", indent=4)
+                    log(f"❌ Ошибка Telegram API при загрузке: {type(e).__name__} — {e}", indent=5)
                     await self._sleep_cancelable(5)
                 except Exception as e:
-                    log(f"❌ Неизвестная ошибка отправки: {e}", indent=4)
+                    log(f"❌ Неизвестная ошибка при загрузке: {e}", indent=5)
                     await self._sleep_cancelable(3)
                 attempt += 1
 
-        if not uploaded_items:
-            log("⚠️ Не удалось загрузить ни одного медиафайла для отправки.", indent=4)
+        return uploaded_items, temp_message_ids
+
+    def _assign_caption_to_group(
+        self,
+        uploaded_items: list[InputMediaPhoto | InputMediaVideo | InputMediaAudio | InputMediaDocument],
+        caption: str,
+    ) -> None:
+        """Assigns caption to the first appropriate media item in a group."""
+        if not caption:
             return
 
-        # Step 2: Assign caption according to priority
-        caption_assigned = False
         # Priority 1: Photo or Video
         for media in uploaded_items:
             if isinstance(media, (InputMediaPhoto | InputMediaVideo)):
-                media.caption = caption_to_send
-                caption_assigned = True
-                break
+                media.caption = caption
+                return
         # Priority 2: Audio
-        if not caption_assigned:
-            for media in uploaded_items:
-                if isinstance(media, InputMediaAudio):
-                    media.caption = caption_to_send
-                    caption_assigned = True
-                    break
+        for media in uploaded_items:
+            if isinstance(media, InputMediaAudio):
+                media.caption = caption
+                return
         # Priority 3: Document
-        if not caption_assigned:
-            for media in uploaded_items:
-                if isinstance(media, InputMediaDocument):
-                    media.caption = caption_to_send
-                    break
+        for media in uploaded_items:
+            if isinstance(media, InputMediaDocument):
+                media.caption = caption
+                return
 
-        # Step 3: Group and send
-        photo_video_group = [
-            media for media in uploaded_items if isinstance(media, (InputMediaPhoto | InputMediaVideo))
-        ]
-        audio_group = [media for media in uploaded_items if isinstance(media, InputMediaAudio)]
-        doc_group = [media for media in uploaded_items if isinstance(media, InputMediaDocument)]
+    async def _forward_media_to_channel(
+        self,
+        channel_id: int | str,
+        uploaded_items: list[InputMediaPhoto | InputMediaVideo | InputMediaAudio | InputMediaDocument],
+        separate_text: str | None,
+    ) -> None:
+        """Forwards uploaded media to a specific channel, respecting group rules."""
+        assert self._client is not None
+        photo_video_group = [item for item in uploaded_items if isinstance(item, (InputMediaPhoto | InputMediaVideo))]
+        audio_group = [item for item in uploaded_items if isinstance(item, InputMediaAudio)]
+        doc_group = [item for item in uploaded_items if isinstance(item, InputMediaDocument)]
 
         try:
             if photo_video_group:
-                log(f"📦 Отправка {len(photo_video_group)} фото/видео в канал...", indent=4)
+                log(f"📦 Отправка {len(photo_video_group)} фото/видео в канал...", indent=5)
                 if len(photo_video_group) > 1:
-                    await self._client.send_media_group(chat_id=channel, media=photo_video_group)  # type: ignore[reportArgumentType]
+                    await self._client.send_media_group(chat_id=channel_id, media=photo_video_group)  # type: ignore[reportArgumentType]
                 else:
                     item = photo_video_group[0]
                     if isinstance(item, InputMediaPhoto):
-                        await self._client.send_photo(chat_id=channel, photo=item.media, caption=item.caption)  # type: ignore[reportUnknownMemberType]
+                        await self._client.send_photo(chat_id=channel_id, photo=item.media, caption=item.caption)  # type: ignore[reportUnknownMemberType]
                     else:
-                        await self._client.send_video(chat_id=channel, video=item.media, caption=item.caption)  # type: ignore[reportUnknownMemberType]
+                        await self._client.send_video(chat_id=channel_id, video=item.media, caption=item.caption)  # type: ignore[reportUnknownMemberType]
 
             if audio_group:
-                log(f"📦 Отправка {len(audio_group)} аудио в канал...", indent=4)
+                log(f"📦 Отправка {len(audio_group)} аудио в канал...", indent=5)
                 if len(audio_group) > 1:
-                    await self._client.send_media_group(chat_id=channel, media=audio_group)  # type: ignore[reportArgumentType]
+                    await self._client.send_media_group(chat_id=channel_id, media=audio_group)  # type: ignore[reportArgumentType]
                 else:
                     item = audio_group[0]
-                    await self._client.send_audio(  # type: ignore[reportUnknownMemberType]
-                        chat_id=channel, audio=item.media, caption=item.caption
-                    )
+                    await self._client.send_audio(chat_id=channel_id, audio=item.media, caption=item.caption)  # type: ignore[reportUnknownMemberType]
 
             if doc_group:
-                log(f"📦 Отправка {len(doc_group)} документов в канал...", indent=4)
+                log(f"📦 Отправка {len(doc_group)} документов в канал...", indent=5)
                 if len(doc_group) > 1:
-                    await self._client.send_media_group(chat_id=channel, media=doc_group)  # type: ignore[reportArgumentType]
+                    await self._client.send_media_group(chat_id=channel_id, media=doc_group)  # type: ignore[reportArgumentType]
                 else:
                     item = doc_group[0]
-                    await self._client.send_document(  # type: ignore[reportUnknownMemberType]
-                        chat_id=channel, document=item.media, caption=item.caption
-                    )
+                    await self._client.send_document(chat_id=channel_id, document=item.media, caption=item.caption)  # type: ignore[reportUnknownMemberType]
 
-            if text_to_send_separately:
-                log("✍️ Отправка длинного текста отдельным сообщением...", indent=4)
-                await self._client.send_message(chat_id=channel, text=text_to_send_separately)
+            if separate_text:
+                await self._send_text_to_channel(channel_id, separate_text)
 
         except (PeerIdInvalid, ChannelPrivate):
-            log(f"⚠️ Канал '{channel}' недоступен или приватный. Пропускаю.", indent=4)
+            log(f"⚠️ Канал '{channel_id}' недоступен или приватный. Пропускаю.", indent=5)
         except Exception as e:
-            log(f"❌ Ошибка при отправке в канал: {e}", indent=4)
+            log(f"❌ Ошибка при отправке в канал {channel_id}: {e}", indent=5)
 
-        if temp_message_ids:
-            try:
-                await self._client.delete_messages(chat_id="me", message_ids=temp_message_ids)
-                log("🧹 Временные сообщения из Избранного удалены.", indent=4)
-            except Exception as e:
-                log(f"⚠️ Не удалось удалить временные сообщения: {e}", indent=4)
+    async def _delete_temp_messages(self, temp_message_ids: list[int]) -> None:
+        """Deletes temporary messages from "Saved Messages"."""
+        assert self._client is not None
+        try:
+            await self._client.delete_messages(chat_id="me", message_ids=temp_message_ids)
+            log("🧹 Временные сообщения из Избранного удалены.", indent=4)
+        except Exception as e:
+            log(f"⚠️ Не удалось удалить временные сообщения: {e}", indent=4)
+
+    def _create_progress_callback(self, indent: int) -> Callable[[int, int], None]:
+        def _progress_hook(current: int, total: int) -> None:
+            current_mb = current / (1024 * 1024)
+            total_mb = total / (1024 * 1024) if total else 0
+
+            if self._pbar is None:
+                self._pbar = tqdm(
+                    total=total_mb,
+                    unit="MB",
+                    unit_scale=False,
+                    desc="  " * indent + "🚀 ",
+                    ncols=80,
+                    bar_format="{desc}{bar}| {n:.0f} / {total:.0f} {unit} | {elapsed} < {remaining} | {rate_fmt}{postfix}",  # noqa: E501
+                )
+
+            self._pbar.update(current_mb - self._pbar.n)
+
+            if current >= total:
+                self._pbar.close()
+                self._pbar = None
+
+        return _progress_hook
 
     async def _handle_floodwait(self, e: FloodWait) -> None:
         wait_time = e.value if isinstance(e.value, int) else 60
-        log(f"⏳ FloodWait: жду {wait_time + 1} секунд...", indent=4)
+        log(f"⏳ FloodWait: жду {wait_time + 1} секунд...", indent=5)
         await self._sleep_cancelable(wait_time + 1)
 
     async def _sleep_cancelable(self, seconds: int) -> None:

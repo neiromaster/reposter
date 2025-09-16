@@ -137,9 +137,9 @@ class VKAPIResponseDict(TypedDict):
     error: NotRequired[VKErrorDict]
 
 
-# --- DTO для обработанных постов ---
+# --- DTO for processed posts ---
 class PreparedAttachment(BaseModel):
-    """Базовая модель для обработанного вложения."""
+    """Base model for a processed attachment."""
 
     file_path: Path
     filename: str
@@ -165,7 +165,7 @@ class PreparedDocumentAttachment(PreparedAttachment):
 
 
 class TelegramPost(BaseModel):
-    """Полностью готовый к отправке пост."""
+    """A post that is fully prepared for sending."""
 
     text: str
     attachments: list[

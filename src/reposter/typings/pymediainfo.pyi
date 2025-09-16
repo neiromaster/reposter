@@ -2,7 +2,7 @@
 from typing import Any
 
 class Track:
-    # Общие поля для всех типов треков
+    # Common fields for all track types
     track_type: str
     def to_data(self) -> dict[str, Any]: ...
 
@@ -23,7 +23,7 @@ class Track:
     file_last_modification_date: str | None
     file_last_modification_date__local: str | None
 
-    # Видео
+    # Video
     width: int | None
     height: int | None
     pixel_aspect_ratio: float | None
@@ -58,7 +58,7 @@ class Track:
     default: str | None
     forced: str | None
 
-    # Аудио
+    # Audio
     channels: int | None
     channel_positions: str | None
     channel_layout: str | None
@@ -78,7 +78,7 @@ class Track:
     writing_library_version: str | None
     writing_library_settings: str | None
 
-    # Изображения
+    # Images
     color_space: str | None
     chroma_subsampling: str | None
     bit_depth: int | None

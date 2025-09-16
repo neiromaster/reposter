@@ -5,7 +5,6 @@ from ..interfaces.task_executor import BaseTaskExecutor
 from ..managers.telegram_manager import TelegramManager
 from ..managers.vk_manager import VKManager
 from ..managers.ytdlp_manager import YTDLPManager
-from ..models.dto import TelegramPost
 from ..utils.log import log
 
 
@@ -62,13 +61,11 @@ class BindingTaskExecutor(BaseTaskExecutor):
                         log(f"✈️ Публикую пост {post.id} в Telegram каналы...", indent=3)
                         await self.telegram_manager.post_to_channels(binding.telegram, [prepared_post])
 
-                        # Обновляем ID последнего успешно опубликованного поста
                         await set_last_post_id(binding.vk.domain, post.id, settings.app.state_file)
                         log(f"✅ Пост {post.id} успешно обработан и опубликован.", indent=4)
 
                     except Exception as e:
                         log(f"❌ Ошибка при обработке поста {post.id}: {e}. Пропускаю его.", indent=3)
-                        # Не обновляем last_post_id, чтобы повторить попытку в следующий раз
                         continue
 
                 log(f"✅ Привязка {binding.vk.domain} обработана.", indent=2)

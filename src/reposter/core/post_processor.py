@@ -39,7 +39,7 @@ class PostProcessor:
         self.ytdlp = ytdlp_manager
 
     async def process_post(self, post: VkPost) -> TelegramPost:
-        """Преобразует сырой пост VK в готовый для Telegram."""
+        """Converts a raw VK post into a Telegram-ready post."""
         processed_text = self._process_text(post.text)
 
         prepared_attachments: list[
@@ -72,26 +72,21 @@ class PostProcessor:
         return TelegramPost(text=processed_text, attachments=prepared_attachments)
 
     def _process_text(self, text: str) -> str:
-        # В будущем здесь может быть цепочка вызовов
         return cleaner.normalize_links(text)
 
     async def _process_video(self, video: VkVideo) -> PreparedVideoAttachment | None:
         log("Обрабатываю видео...", indent=4)
-        # 1. Скачиваем видео
         video_path = await self.ytdlp.download_video(video.url)
         if not video_path:
             log("❌ Не удалось скачать видео.", indent=5)
             return None
 
-        # 2. Ищем и скачиваем обложку
         thumb_path = None
         best_thumb = self._find_best_thumbnail(video.image)
         if best_thumb:
             log("Скачиваю обложку...", indent=5)
-            # Используем vk_manager для скачивания файла по URL
             thumb_path = await self.vk.download_file(best_thumb.url, Path("downloads/thumbnails"))
 
-        # 3. Получаем метаданные (ширина, высота)
         try:
             media_info = MediaInfo.parse(str(video_path))
             video_track = next((track for track in media_info.tracks if track.track_type == "Video"), None)
@@ -117,18 +112,16 @@ class PostProcessor:
         if not images:
             return None
 
-        # 1. Разделяем на без padding и с padding
         no_pad = [img for img in images if not img.with_padding]
         pad = [img for img in images if img.with_padding]
 
-        # 2. Выбираем приоритетную группу
         candidates = no_pad if no_pad else pad
 
         def sort_key(img: VkCoverSize) -> tuple[int, int, float, int]:
             w, h = img.width, img.height
             longer = max(w, h)
 
-            # Категория: 0 — ровно 320, 1 — больше 320, 2 — меньше 320
+            # Category: 0 - exactly 320, 1 - more than 320, 2 - less than 320
             if longer == TARGET:
                 category = 0
                 distance = 0
@@ -139,7 +132,7 @@ class PostProcessor:
                 category = 2
                 distance = TARGET - longer
 
-            # Отклонение от целевого соотношения сторон
+            # Deviation from the target aspect ratio
             ratio = w / h if h else 0
             ratio_diff = abs(ratio - target_ratio)
 
@@ -170,13 +163,12 @@ class PostProcessor:
             log("❌ Не удалось скачать аудио.", indent=5)
             return None
 
-        # Формируем желаемое имя файла, не переименовывая сам файл
-        # TODO: добавить санацию имени файла для Windows/Linux
+        # TODO: add file name sanitization for Windows/Linux
         filename = f"{audio.artist} - {audio.title}{audio_path.suffix}"
 
         return PreparedAudioAttachment(
-            file_path=audio_path,  # Реальный путь к файлу
-            filename=filename,  # Желаемое имя для Telegram
+            file_path=audio_path,
+            filename=filename,
             artist=audio.artist,
             title=audio.title,
         )
@@ -191,10 +183,9 @@ class PostProcessor:
             log("❌ Не удалось скачать документ.", indent=5)
             return None
 
-        # Формируем желаемое имя файла, не переименовывая сам файл
         filename = f"{doc.title}{doc_path.suffix}"
 
         return PreparedDocumentAttachment(
-            file_path=doc_path,  # Реальный путь к файлу
-            filename=filename,  # Желаемое имя для Telegram
+            file_path=doc_path,
+            filename=filename,
         )
