@@ -2,7 +2,7 @@ import asyncio
 import sys
 from pathlib import Path
 
-from .composition import DefaultAppComposer
+from .core.composition import DefaultAppComposer
 from .interfaces.app_composer import AppComposer
 
 

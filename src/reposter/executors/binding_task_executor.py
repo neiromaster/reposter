@@ -1,5 +1,6 @@
-import aiofiles
 import json
+
+import aiofiles
 
 from ..config.settings import Settings
 from ..core.state_manager import get_last_post_id, set_last_post_id
@@ -47,7 +48,7 @@ class BindingTaskExecutor(BaseTaskExecutor):
                 latest_post_id_in_batch = new_posts[-1].id
 
                 # Write to json file instead of printing
-                posts_as_dicts = [post.model_dump(mode='json') for post in new_posts]
+                posts_as_dicts = [post.model_dump(mode="json") for post in new_posts]
                 async with aiofiles.open("new_posts.json", "w", encoding="utf-8") as f:
                     await f.write(json.dumps(posts_as_dicts, indent=4, ensure_ascii=False))
 

@@ -1,10 +1,10 @@
-from .core.app_manager import AppManager
-from .executors.binding_task_executor import BindingTaskExecutor
-from .interfaces.app_composer import AppComposer
-from .interfaces.app_manager import BaseAppManager
-from .managers.telegram_manager import TelegramManager
-from .managers.vk_manager import VKManager
-from .managers.ytdlp_manager import YTDLPManager
+from ..executors.binding_task_executor import BindingTaskExecutor
+from ..interfaces.app_composer import AppComposer
+from ..interfaces.app_manager import BaseAppManager
+from ..managers.telegram_manager import TelegramManager
+from ..managers.vk_manager import VKManager
+from ..managers.ytdlp_manager import YTDLPManager
+from .app_manager import AppManager
 
 
 class DefaultAppComposer(AppComposer):
