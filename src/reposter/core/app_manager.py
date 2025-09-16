@@ -111,6 +111,7 @@ class AppManager(BaseAppManager):
         async with AsyncExitStack() as stack:
             print("🔌 Инициализация менеджеров...")
             for manager in self._managers:
+                manager.set_shutdown_event(self._stop_app_event)
                 await manager.setup(settings)
                 await stack.enter_async_context(manager)
             print("✅ Менеджеры инициализированы.")

@@ -25,6 +25,8 @@ def settings() -> Settings:
 @pytest.fixture
 async def vk_manager() -> AsyncGenerator[VKManager, None]:
     manager = VKManager()
+    shutdown_event = asyncio.Event()
+    manager.set_shutdown_event(shutdown_event)
     yield manager
     if manager._initialized:  # type: ignore[reportPrivateUsage]
         await manager.shutdown()
@@ -101,7 +103,6 @@ async def test_shutdown_closes_client(vk_manager: VKManager, settings: Settings)
     assert not vk_manager._initialized  # type: ignore[reportPrivateUsage]
     if mock_client:
         cast(AsyncMock, mock_client.aclose).assert_awaited_once()
-    assert vk_manager._shutdown_event.is_set()  # type: ignore[reportPrivateUsage]
 
 
 @pytest.mark.asyncio

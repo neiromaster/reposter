@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from asyncio import Event
 from pathlib import Path
 from types import TracebackType
 from typing import Any, final
@@ -28,7 +29,11 @@ class VKManager(BaseManager):
         self._initialized: bool = False
         self._token: str = ""
         self._client: httpx.AsyncClient | None = None
-        self._shutdown_event = asyncio.Event()
+        self._shutdown_event: Event | None = None
+
+    def set_shutdown_event(self, event: Event) -> None:
+        """Sets the shutdown event from the AppManager."""
+        self._shutdown_event = event
 
     async def setup(self, settings: Settings) -> None:
         """Initializes the VK manager and the HTTP client."""
@@ -38,7 +43,6 @@ class VKManager(BaseManager):
 
         log("🌐 [VK] Инициализация VK API...")
         self._token = settings.vk_service_token
-        self._shutdown_event.clear()
 
         self._client = httpx.AsyncClient(
             timeout=httpx.Timeout(10.0, connect=5.0),
@@ -68,7 +72,6 @@ class VKManager(BaseManager):
         if not self._initialized:
             return
         log("🌐 [VK] Инициирую остановку клиента...")
-        self._shutdown_event.set()
         if self._client and not self._client.is_closed:
             await self._client.aclose()
         self._initialized = False
@@ -90,7 +93,7 @@ class VKManager(BaseManager):
     @final
     async def _should_retry(self, retry_state: RetryCallState) -> bool:
         """Return True if the exception is retryable and shutdown is not requested."""
-        if self._shutdown_event.is_set():
+        if self._shutdown_event and self._shutdown_event.is_set():
             return False
         if not retry_state.outcome:
             return False

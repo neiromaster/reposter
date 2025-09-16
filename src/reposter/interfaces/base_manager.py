@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from asyncio import Event
 from types import TracebackType
 
 from ..config.settings import Settings
@@ -9,6 +10,11 @@ class BaseManager(ABC):
     Base interface for all managers.
     Any manager must implement these methods.
     """
+
+    @abstractmethod
+    def set_shutdown_event(self, event: Event) -> None:
+        """Called once on application startup to set the shutdown event."""
+        pass
 
     @abstractmethod
     async def setup(self, settings: Settings) -> None:

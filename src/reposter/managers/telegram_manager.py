@@ -1,3 +1,4 @@
+from asyncio import Event
 from types import TracebackType
 from typing import Any
 
@@ -11,6 +12,11 @@ class TelegramManager(BaseManager):
         self._client: Any = None
         self._api_id: int = 0
         self._api_hash: str = ""
+        self._shutdown_event: Event | None = None
+
+    def set_shutdown_event(self, event: Event) -> None:
+        """Sets the shutdown event from the AppManager."""
+        self._shutdown_event = event
 
     async def setup(self, settings: Settings) -> None:
         print("✈️ [Telegram] Инициализация Telegram клиента...")
