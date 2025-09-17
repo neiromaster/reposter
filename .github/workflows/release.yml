@@ -65,7 +65,7 @@ jobs:
           fi
 
       - name: Build with PyInstaller
-        run: uv run pyinstaller main.py --onefile --name reposter-${{ matrix.label }} --log-level=DEBUG
+        run: uv run pyinstaller main.py --onefile --name reposter-${{ matrix.label }} --log-level=DEBUG --paths src
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
