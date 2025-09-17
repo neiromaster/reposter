@@ -117,7 +117,7 @@ class TelegramManager(BaseManager):
 
             if not uploaded_items:
                 if post.text:
-                    log(" Медиа не найдено, отправляю только текст...", indent=4)
+                    log("📄 Медиа не найдено, отправляю только текст...", indent=4)
                     for channel_id in tg_config.channel_ids:
                         await self._send_text_to_channel(channel_id, post.text)
                 else:
@@ -128,7 +128,7 @@ class TelegramManager(BaseManager):
             self._assign_caption_to_group(uploaded_items, caption)
 
             for channel_id in tg_config.channel_ids:
-                log(f"Пересылка поста в {channel_id}...", indent=4)
+                log(f"➡️ Пересылка поста в {channel_id}...", indent=4)
                 await self._forward_media_to_channel(channel_id, uploaded_items, text_to_send_separately)
 
             if temp_message_ids:

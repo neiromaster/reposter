@@ -62,9 +62,9 @@ class PostProcessor:
                     if attachment.doc:
                         prepared_attachment = await self._process_doc(attachment.doc)
                 case "poll" | "link" | "graffiti" | "donut_link":
-                    log(f"Пропускаю неподдерживаемое вложение типа: {attachment.type}", indent=4)
+                    log(f"🚫 Пропускаю неподдерживаемое вложение типа: {attachment.type}", indent=4)
                 case _:
-                    log(f"Неизвестный тип вложения: {attachment.type}", indent=4)
+                    log(f"❓ Неизвестный тип вложения: {attachment.type}", indent=4)
 
             if prepared_attachment:
                 prepared_attachments.append(prepared_attachment)
@@ -75,7 +75,7 @@ class PostProcessor:
         return normalize_links(text)
 
     async def _process_video(self, video: VkVideo) -> PreparedVideoAttachment | None:
-        log("Обрабатываю видео...", indent=4)
+        log("🎬 Обрабатываю видео...", indent=4)
         video_path = await self.ytdlp.download_video(video.url)
         if not video_path:
             log("❌ Не удалось скачать видео.", indent=5)
@@ -84,7 +84,7 @@ class PostProcessor:
         thumb_path = None
         best_thumb = self._find_best_thumbnail(video.image)
         if best_thumb:
-            log("Скачиваю обложку...", indent=5)
+            log("🖼️ Скачиваю обложку...", indent=5)
             thumb_path = await self.vk.download_file(best_thumb.url, Path("downloads/thumbnails"))
 
         try:
@@ -107,7 +107,7 @@ class PostProcessor:
         )
 
     def _find_best_thumbnail(self, images: list[VkCoverSize], target_ratio: float = 16 / 9) -> VkCoverSize | None:
-        log("Выбираю лучшую обложку...", indent=5)
+        log("🌟 Выбираю лучшую обложку...", indent=5)
         TARGET = 320
         if not images:
             return None
@@ -142,7 +142,7 @@ class PostProcessor:
         return sorted(candidates, key=sort_key)[0]
 
     async def _process_photo(self, photo: VkPhoto) -> PreparedPhotoAttachment | None:
-        log("Обрабатываю фото...", indent=4)
+        log("📸 Обрабатываю фото...", indent=4)
         photo_path = await self.vk.download_file(photo.max_size_url, Path("downloads/photos"))
         if not photo_path:
             log("❌ Не удалось скачать фото.", indent=5)
@@ -154,7 +154,7 @@ class PostProcessor:
         )
 
     async def _process_audio(self, audio: VkAudio) -> PreparedAudioAttachment | None:
-        log("Обрабатываю аудио...", indent=4)
+        log("🎵 Обрабатываю аудио...", indent=4)
 
         download_dir = Path("downloads/audio")
         audio_path = await self.vk.download_file(url=audio.url, download_path=download_dir)
@@ -174,7 +174,7 @@ class PostProcessor:
         )
 
     async def _process_doc(self, doc: VkDoc) -> PreparedDocumentAttachment | None:
-        log("Обрабатываю документ...", indent=4)
+        log("📄 Обрабатываю документ...", indent=4)
 
         download_dir = Path("downloads/docs")
         doc_path = await self.vk.download_file(url=doc.url, download_path=download_dir)

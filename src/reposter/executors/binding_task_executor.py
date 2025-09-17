@@ -30,7 +30,7 @@ class BindingTaskExecutor(BaseTaskExecutor):
         log(f"📋 Обрабатываю {len(settings.bindings)} привязок...")
 
         for binding in settings.bindings:
-            log(f"🔗 → Обрабатываю привязку: {binding.vk.domain} → {binding.telegram.channel_ids}", indent=1)
+            log(f"🔄 Обрабатываю привязку: {binding.vk.domain} → {binding.telegram.channel_ids}", indent=1)
 
             try:
                 last_post_id = await get_last_post_id(binding.vk.domain, settings.app.state_file)
