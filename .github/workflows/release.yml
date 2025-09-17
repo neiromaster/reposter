@@ -1,0 +1,97 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    name: Build for ${{ matrix.label }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: linux-x64
+            runner: ubuntu-latest
+            python_arch: x64
+          - label: windows-x64
+            runner: windows-latest
+            python_arch: x64
+          - label: macos-x64
+            runner: macos-14
+            python_arch: x64
+          - label: macos-arm64
+            runner: macos-14
+            python_arch: arm64
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python ${{ matrix.python_arch }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          architecture: ${{ matrix.python_arch }}
+
+      - name: Cache pip & uv
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pip
+            ~/.cache/uv
+          key: ${{ runner.os }}-${{ matrix.python_arch }}-deps-${{ hashFiles('**/uv.lock', '**/pyproject.toml', '**/requirements*.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.python_arch }}-deps-
+
+      - name: Install uv (fixed version)
+        run: pip install --upgrade uv==0.8.14
+
+      - name: Install dependencies
+        run: |
+          if uv sync --help | grep -q -- '--group'; then
+            uv sync --group dev
+          else
+            echo "⚠️ uv without --group support, install all dependencies"
+            uv sync
+          fi
+
+      - name: Build with PyInstaller
+        run: uv run pyinstaller main.py --onefile --name reposter-${{ matrix.label }} --log-level=DEBUG
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: reposter-${{ matrix.label }}
+          path: dist/*
+
+  changelog:
+    name: Generate changelog
+    uses: ./.github/workflows/changelog.yml
+
+  create-release:
+    name: Create GitHub Release
+    needs: [build, changelog]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          body: ${{ needs.changelog.outputs.changelog }}
+          files: artifacts/**/*
+          make_latest: true
