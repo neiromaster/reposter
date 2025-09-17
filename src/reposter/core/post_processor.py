@@ -31,7 +31,7 @@ from ..models.dto import (
     Video as VkVideo,
 )
 from ..utils.log import log
-from ..utils.text_utils import normalize_links
+from ..utils.text_utils import normalize_links, sanitize_filename, sanitize_for_telegram
 
 
 class PostProcessor:
@@ -98,9 +98,12 @@ class PostProcessor:
         except Exception as e:
             raise PostProcessingError(f"❌ Не удалось получить метаданные видео: {e}") from e
 
+        base_filename = sanitize_filename(video.title or f"{video.owner_id}_{video.id}")
+        filename = sanitize_for_telegram(base_filename) + video_path.suffix
+
         return PreparedVideoAttachment(
             file_path=video_path,
-            filename=(video.title or f"{video.owner_id}_{video.id}") + video_path.suffix,
+            filename=filename,
             width=width,
             height=height,
             thumbnail_path=thumb_path,
@@ -121,7 +124,6 @@ class PostProcessor:
             w, h = img.width, img.height
             longer = max(w, h)
 
-            # Category: 0 - exactly 320, 1 - more than 320, 2 - less than 320
             if longer == TARGET:
                 category = 0
                 distance = 0
@@ -132,11 +134,9 @@ class PostProcessor:
                 category = 2
                 distance = TARGET - longer
 
-            # Deviation from the target aspect ratio
             ratio = w / h if h else 0
             ratio_diff = abs(ratio - target_ratio)
 
-            # Минус площадь, чтобы большее разрешение шло раньше
             return (category, distance, ratio_diff, -w * h)
 
         return sorted(candidates, key=sort_key)[0]
@@ -147,9 +147,12 @@ class PostProcessor:
         if not photo_path:
             raise PostProcessingError("❌ Не удалось скачать фото.")
 
+        base_filename = sanitize_filename(photo_path.stem)
+        filename = sanitize_for_telegram(base_filename) + photo_path.suffix
+
         return PreparedPhotoAttachment(
             file_path=photo_path,
-            filename=photo_path.name,
+            filename=filename,
         )
 
     async def _process_audio(self, audio: VkAudio) -> PreparedAudioAttachment:
@@ -161,8 +164,8 @@ class PostProcessor:
         if not audio_path:
             raise PostProcessingError("❌ Не удалось скачать аудио.")
 
-        # TODO: add file name sanitization for Windows/Linux
-        filename = f"{audio.artist} - {audio.title}{audio_path.suffix}"
+        base_filename = sanitize_filename(f"{audio.artist} - {audio.title}")
+        filename = sanitize_for_telegram(base_filename) + audio_path.suffix
 
         return PreparedAudioAttachment(
             file_path=audio_path,
@@ -180,7 +183,8 @@ class PostProcessor:
         if not doc_path:
             raise PostProcessingError("❌ Не удалось скачать документ.")
 
-        filename = f"{doc.title}{doc_path.suffix}"
+        base_filename = sanitize_filename(doc.title)
+        filename = sanitize_for_telegram(base_filename) + doc_path.suffix
 
         return PreparedDocumentAttachment(
             file_path=doc_path,

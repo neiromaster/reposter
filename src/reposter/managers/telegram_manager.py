@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from asyncio import Event
 from collections.abc import Callable, Sequence
 from types import TracebackType
@@ -327,8 +328,12 @@ class TelegramManager(BaseManager):
         except Exception as e:
             log(f"⚠️ Не удалось удалить временные сообщения: {e}", indent=4)
 
-    def _create_progress_callback(self, indent: int) -> Callable[[int, int], None]:
+    def _create_progress_callback(self, indent: int, min_interval: float = 0.5) -> Callable[[int, int], None]:
+        last_update: float = 0.0
+
         def _progress_hook(current: int, total: int) -> None:
+            nonlocal last_update
+
             if self._shutdown_event and self._shutdown_event.is_set():
                 raise asyncio.CancelledError()
 
@@ -342,10 +347,14 @@ class TelegramManager(BaseManager):
                     unit_scale=False,
                     desc="  " * indent + "🚀 ",
                     ncols=80,
+                    mininterval=min_interval,
                     bar_format="{desc}{bar}| {n:.0f} / {total:.0f} {unit} | {elapsed} < {remaining} | {rate_fmt}{postfix}",  # noqa: E501
                 )
 
-            self._pbar.update(current_mb - self._pbar.n)
+            now = time.time()
+            if now - last_update >= min_interval or current >= total:
+                self._pbar.update(current_mb - self._pbar.n)
+                last_update = now
 
             if current >= total:
                 self._pbar.close()

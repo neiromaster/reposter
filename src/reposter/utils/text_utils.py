@@ -71,3 +71,29 @@ def normalize_links(text: str) -> str:
     text = re.sub(PATTERN_PROTOCOL_URL, strip_protocol, text)
 
     return text
+
+
+def sanitize_filename(filename: str) -> str:
+    """Removes characters that are invalid for filenames in Windows and Linux."""
+    # Replace forward and backslashes with a space
+    filename = re.sub(r"[\/]", " ", filename)
+    # Characters invalid in Windows and/or Linux filenames
+    # ASCII 0-31 are control characters, also handled
+    invalid_chars = r'[:*?"<>|]'
+    # Replace invalid characters with an underscore
+    sanitized = re.sub(invalid_chars, "_", filename)
+    # Replace control characters
+    sanitized = re.sub(r"[\x00-\x1f]", "", sanitized)
+    # Reduce multiple spaces to a single space
+    sanitized = re.sub(r"\s+", " ", sanitized).strip()
+    # Reduce multiple underscores to a single one
+    sanitized = re.sub(r"_+", "_", sanitized)
+    # It's also a good idea to limit the filename length
+    return sanitized[:200]  # Limit to 200 chars as a safe measure
+
+
+def sanitize_for_telegram(filename: str) -> str:
+    """Sanitizes filename for Telegram by replacing brackets with spaces."""
+    sanitized = re.sub(r"[\[\]()]", " ", filename)
+    sanitized = re.sub(r"\s+", " ", sanitized)
+    return sanitized.strip()
