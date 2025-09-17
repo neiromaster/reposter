@@ -133,6 +133,8 @@ class TelegramManager(BaseManager):
             if temp_message_ids:
                 await self._delete_temp_messages(temp_message_ids)
 
+            await self._delete_downloaded_files(post.attachments)
+
     def _prepare_caption(self, caption: str) -> tuple[str, str | None]:
         """Splits caption if it's too long for a media group."""
         TELEGRAM_CAPTION_LIMIT = 4096
@@ -301,6 +303,25 @@ class TelegramManager(BaseManager):
             log(f"⚠️ Канал '{channel_id}' недоступен или приватный. Пропускаю.", indent=5)
         except Exception as e:
             log(f"❌ Ошибка при отправке в канал {channel_id}: {e}", indent=5)
+
+    async def _delete_downloaded_files(self, attachments: Sequence[PreparedAttachment]) -> None:
+        """Deletes the locally downloaded files associated with the attachments."""
+        for attachment in attachments:
+            try:
+                if attachment.file_path.exists():
+                    attachment.file_path.unlink()
+                    log(f"🧹 Удален файл: {attachment.file_path}", indent=4)
+                if (
+                    isinstance(attachment, PreparedVideoAttachment)
+                    and attachment.thumbnail_path
+                    and attachment.thumbnail_path.exists()
+                ):
+                    attachment.thumbnail_path.unlink()
+                    log(f"🧹 Удален файл миниатюры: {attachment.thumbnail_path}", indent=4)
+            except FileNotFoundError:
+                log(f"⚠️ Файл не найден при попытке удаления: {attachment.file_path}", indent=4)
+            except Exception as e:
+                log(f"❌ Ошибка при удалении файла {attachment.file_path}: {e}", indent=4)
 
     async def _delete_temp_messages(self, temp_message_ids: list[int]) -> None:
         """Deletes temporary messages from "Saved Messages"."""
