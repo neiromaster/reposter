@@ -27,6 +27,7 @@ from ..models.dto import (
     PreparedVideoAttachment,
     TelegramPost,
 )
+from ..utils.cleaner import delete_files_async
 from ..utils.log import log
 
 
@@ -132,8 +133,6 @@ class TelegramManager(BaseManager):
 
             if temp_message_ids:
                 await self._delete_temp_messages(temp_message_ids)
-
-            await self._delete_downloaded_files(post.attachments)
 
     def _prepare_caption(self, caption: str) -> tuple[str, str | None]:
         """Splits caption if it's too long for a media group."""
@@ -306,22 +305,7 @@ class TelegramManager(BaseManager):
 
     async def _delete_downloaded_files(self, attachments: Sequence[PreparedAttachment]) -> None:
         """Deletes the locally downloaded files associated with the attachments."""
-        for attachment in attachments:
-            try:
-                if attachment.file_path.exists():
-                    attachment.file_path.unlink()
-                    log(f"🧹 Удален файл: {attachment.file_path}", indent=4)
-                if (
-                    isinstance(attachment, PreparedVideoAttachment)
-                    and attachment.thumbnail_path
-                    and attachment.thumbnail_path.exists()
-                ):
-                    attachment.thumbnail_path.unlink()
-                    log(f"🧹 Удален файл миниатюры: {attachment.thumbnail_path}", indent=4)
-            except FileNotFoundError:
-                log(f"⚠️ Файл не найден при попытке удаления: {attachment.file_path}", indent=4)
-            except Exception as e:
-                log(f"❌ Ошибка при удалении файла {attachment.file_path}: {e}", indent=4)
+        await delete_files_async(attachments)
 
     async def _delete_temp_messages(self, temp_message_ids: list[int]) -> None:
         """Deletes temporary messages from "Saved Messages"."""

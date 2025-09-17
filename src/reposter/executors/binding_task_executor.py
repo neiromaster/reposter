@@ -5,6 +5,7 @@ from ..interfaces.task_executor import BaseTaskExecutor
 from ..managers.telegram_manager import TelegramManager
 from ..managers.vk_manager import VKManager
 from ..managers.ytdlp_manager import YTDLPManager
+from ..utils.cleaner import delete_files_async
 from ..utils.log import log
 
 
@@ -60,6 +61,8 @@ class BindingTaskExecutor(BaseTaskExecutor):
 
                         log(f"✈️ Публикую пост {post.id} в Telegram каналы...", indent=3)
                         await self.telegram_manager.post_to_channels(binding.telegram, [prepared_post])
+
+                        await delete_files_async(prepared_post.attachments)
 
                         await set_last_post_id(binding.vk.domain, post.id, settings.app.state_file)
                         log(f"✅ Пост {post.id} успешно обработан и опубликован.", indent=4)

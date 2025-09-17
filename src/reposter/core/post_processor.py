@@ -29,8 +29,8 @@ from ..models.dto import (
 from ..models.dto import (
     Video as VkVideo,
 )
-from ..utils import cleaner
 from ..utils.log import log
+from ..utils.text_utils import normalize_links
 
 
 class PostProcessor:
@@ -72,7 +72,7 @@ class PostProcessor:
         return TelegramPost(text=processed_text, attachments=prepared_attachments)
 
     def _process_text(self, text: str) -> str:
-        return cleaner.normalize_links(text)
+        return normalize_links(text)
 
     async def _process_video(self, video: VkVideo) -> PreparedVideoAttachment | None:
         log("Обрабатываю видео...", indent=4)

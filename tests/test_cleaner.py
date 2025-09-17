@@ -1,6 +1,6 @@
 import pytest
 
-from src.reposter.utils.cleaner import normalize_links
+from src.reposter.utils.text_utils import normalize_links
 
 # Atomic test cases to isolate functionality
 TEST_CASES = [
