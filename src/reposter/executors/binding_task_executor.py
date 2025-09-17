@@ -42,11 +42,13 @@ class BindingTaskExecutor(BaseTaskExecutor):
         telegram_manager: TelegramManager,
         ytdlp_manager: YTDLPManager,
         post_processor: PostProcessor,
+        debug: bool = False,
     ):
         self.vk_manager = vk_manager
         self.telegram_manager = telegram_manager
         self.ytdlp_manager = ytdlp_manager
         self.post_processor = post_processor
+        self.debug = debug
         self._shutdown_event: Event | None = None
 
     def set_shutdown_event(self, event: Event) -> None:
@@ -82,7 +84,8 @@ class BindingTaskExecutor(BaseTaskExecutor):
                     log("✅ Новых постов нет.", indent=2)
                     continue
 
-                await save_new_posts_to_json(new_posts, NEW_POSTS_FILE)
+                if self.debug:
+                    await save_new_posts_to_json(new_posts, NEW_POSTS_FILE)
 
                 log(f"📬 Найдено {len(new_posts)} новых постов. Начинаю последовательную обработку...", indent=2)
 

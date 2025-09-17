@@ -9,7 +9,7 @@ from .post_processor import PostProcessor
 
 
 class DefaultAppComposer(AppComposer):
-    def compose_app(self) -> BaseAppManager:
+    def compose_app(self, debug: bool = False) -> BaseAppManager:
         ytdlp_manager = YTDLPManager()
         vk_manager = VKManager()
         telegram_manager = TelegramManager()
@@ -24,6 +24,7 @@ class DefaultAppComposer(AppComposer):
             telegram_manager=telegram_manager,
             ytdlp_manager=ytdlp_manager,
             post_processor=post_processor,
+            debug=debug,
         )
 
         managers = [ytdlp_manager, vk_manager, telegram_manager]
