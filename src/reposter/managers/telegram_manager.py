@@ -318,6 +318,9 @@ class TelegramManager(BaseManager):
 
     def _create_progress_callback(self, indent: int) -> Callable[[int, int], None]:
         def _progress_hook(current: int, total: int) -> None:
+            if self._shutdown_event and self._shutdown_event.is_set():
+                raise asyncio.CancelledError()
+
             current_mb = current / (1024 * 1024)
             total_mb = total / (1024 * 1024) if total else 0
 
