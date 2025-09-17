@@ -18,6 +18,7 @@ from pyrogram.types import (
 from tqdm import tqdm
 
 from ..config.settings import Settings, TelegramConfig
+from ..exceptions import TelegramManagerError
 from ..interfaces.base_manager import BaseManager
 from ..models.dto import (
     PreparedAttachment,
@@ -50,7 +51,7 @@ class TelegramManager(BaseManager):
 
     async def setup(self, settings: Settings) -> None:
         """Start the Telegram client session."""
-        log("✈️ [Telegram] Инициализация Telegram клиента...")
+        log("✈️ [Telegram] Запуск...", indent=1)
         self._session_name = settings.app.session_name
         self._api_id = settings.telegram_api_id
         self._api_hash = settings.telegram_api_hash
@@ -63,14 +64,14 @@ class TelegramManager(BaseManager):
             )
             await self._client.start()
             self._initialized = True
-            log("✈️ [Telegram] Клиент запущен.")
+            log("✈️ [Telegram] Готов к работе.", indent=1)
         except asyncio.CancelledError:
-            log("⏹️ Запуск Telegram клиента прерван пользователем.", indent=1)
+            log("✈️ [Telegram] Запуск прерван пользователем.", indent=1)
             self._initialized = False
             raise
         except Exception:
             self._initialized = False
-            log("❌ Не удалось запустить Telegram клиент.", indent=1)
+            log("✈️ [Telegram] Ошибка запуска.", indent=1)
             raise
 
     async def update_config(self, settings: Settings) -> None:
@@ -84,16 +85,19 @@ class TelegramManager(BaseManager):
             or self._api_hash != settings.telegram_api_hash
             or self._session_name != settings.app.session_name
         ):
-            log("✈️ [Telegram] Конфигурация изменилась, перезапускаю клиент...")
+            log("✈️ [Telegram] Конфигурация изменилась, перезапуск...", indent=1)
             await self.shutdown()
             await self.setup(settings)
 
     async def shutdown(self) -> None:
         """Stop the Telegram client session."""
+        if not self._initialized:
+            return
+        log("✈️ [Telegram] Завершение работы...", indent=1)
         if self._client and self._client.is_connected:
             await self._client.stop()
-            log("✈️ [Telegram] Клиент остановлен.")
         self._initialized = False
+        log("✈️ [Telegram] Остановлен.", indent=1)
 
     async def __aenter__(self) -> TelegramManager:
         """Enter the async context manager."""
@@ -128,7 +132,7 @@ class TelegramManager(BaseManager):
             self._assign_caption_to_group(uploaded_items, caption)
 
             for channel_id in tg_config.channel_ids:
-                log(f"➡️ Пересылка поста в {channel_id}...", indent=4)
+                log(f"➡️ Пересылка поста в {channel_id}...", indent=3, padding_top=1)
                 await self._forward_media_to_channel(channel_id, uploaded_items, text_to_send_separately)
 
             if temp_message_ids:
@@ -151,7 +155,7 @@ class TelegramManager(BaseManager):
         try:
             await self._client.send_message(chat_id=channel_id, text=text)
         except Exception as e:
-            log(f"❌ Ошибка при отправке текста в канал {channel_id}: {e}", indent=5)
+            raise TelegramManagerError(f"❌ Ошибка при отправке текста в канал {channel_id}: {e}") from e
 
     async def _upload_media_to_saved(
         self, attachments: Sequence[PreparedAttachment], max_retries: int = 3
@@ -165,10 +169,10 @@ class TelegramManager(BaseManager):
             attempt = 0
             while attempt < max_retries:
                 try:
-                    log(f"⬆️ Загрузка {attachment.filename} в Избранное...", indent=5)
+                    log(f"📤 Загрузка {attachment.filename} в Избранное...", indent=4)
                     msg: Message | None = None
                     media_object: InputMediaPhoto | InputMediaVideo | InputMediaAudio | InputMediaDocument | None = None
-                    progress_callback = self._create_progress_callback(indent=5)
+                    progress_callback = self._create_progress_callback(indent=4)
 
                     if isinstance(attachment, PreparedVideoAttachment):
                         video_kwargs: dict[str, Any] = {
@@ -218,6 +222,9 @@ class TelegramManager(BaseManager):
                         uploaded_items.append(media_object)
                     break  # Success
 
+                except asyncio.CancelledError:
+                    log("⏹️ Загрузка в Telegram прервана.", indent=5)
+                    raise
                 except FloodWait as e:
                     await self._handle_floodwait(e)
                 except RPCError as e:
@@ -227,6 +234,10 @@ class TelegramManager(BaseManager):
                     log(f"❌ Неизвестная ошибка при загрузке: {e}", indent=5)
                     await self._sleep_cancelable(3)
                 attempt += 1
+            else:  # This will only run if the while loop completes without a break
+                raise TelegramManagerError(
+                    f"❌ Не удалось загрузить вложение {attachment.filename} после {max_retries} попыток."
+                )
 
         return uploaded_items, temp_message_ids
 
@@ -269,7 +280,7 @@ class TelegramManager(BaseManager):
 
         try:
             if photo_video_group:
-                log(f"📦 Отправка {len(photo_video_group)} фото/видео в канал...", indent=5)
+                log(f"📦 Отправка {len(photo_video_group)} фото/видео в канал...", indent=4)
                 if len(photo_video_group) > 1:
                     await self._client.send_media_group(chat_id=channel_id, media=photo_video_group)  # type: ignore[reportArgumentType]
                 else:
@@ -280,7 +291,7 @@ class TelegramManager(BaseManager):
                         await self._client.send_video(chat_id=channel_id, video=item.media, caption=item.caption)  # type: ignore[reportUnknownMemberType]
 
             if audio_group:
-                log(f"📦 Отправка {len(audio_group)} аудио в канал...", indent=5)
+                log(f"📦 Отправка {len(audio_group)} аудио в канал...", indent=4)
                 if len(audio_group) > 1:
                     await self._client.send_media_group(chat_id=channel_id, media=audio_group)  # type: ignore[reportArgumentType]
                 else:
@@ -288,7 +299,7 @@ class TelegramManager(BaseManager):
                     await self._client.send_audio(chat_id=channel_id, audio=item.media, caption=item.caption)  # type: ignore[reportUnknownMemberType]
 
             if doc_group:
-                log(f"📦 Отправка {len(doc_group)} документов в канал...", indent=5)
+                log(f"📦 Отправка {len(doc_group)} документов в канал...", indent=4)
                 if len(doc_group) > 1:
                     await self._client.send_media_group(chat_id=channel_id, media=doc_group)  # type: ignore[reportArgumentType]
                 else:
@@ -301,7 +312,7 @@ class TelegramManager(BaseManager):
         except (PeerIdInvalid, ChannelPrivate):
             log(f"⚠️ Канал '{channel_id}' недоступен или приватный. Пропускаю.", indent=5)
         except Exception as e:
-            log(f"❌ Ошибка при отправке в канал {channel_id}: {e}", indent=5)
+            raise TelegramManagerError(f"❌ Ошибка при отправке в канал {channel_id}: {e}") from e
 
     async def _delete_downloaded_files(self, attachments: Sequence[PreparedAttachment]) -> None:
         """Deletes the locally downloaded files associated with the attachments."""
@@ -312,7 +323,7 @@ class TelegramManager(BaseManager):
         assert self._client is not None
         try:
             await self._client.delete_messages(chat_id="me", message_ids=temp_message_ids)
-            log("🧹 Временные сообщения из Избранного удалены.", indent=4)
+            log("🧹 Временные сообщения из Избранного удалены.", indent=4, padding_top=1)
         except Exception as e:
             log(f"⚠️ Не удалось удалить временные сообщения: {e}", indent=4)
 

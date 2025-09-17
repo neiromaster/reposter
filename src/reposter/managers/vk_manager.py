@@ -37,10 +37,10 @@ class VKManager(BaseManager):
     async def setup(self, settings: Settings) -> None:
         """Initializes the VK manager and the HTTP client."""
         if self._initialized:
-            log("🌐 [VK] Клиент уже инициализирован. Перезапускаю...")
+            log("🌐 [VK] Клиент уже запущен. Перезапуск...", indent=1)
             await self.shutdown()
 
-        log("🌐 [VK] Инициализация VK API...")
+        log("🌐 [VK] Запуск...", indent=1)
         self._token = settings.vk_service_token
 
         self._client = httpx.AsyncClient(
@@ -50,7 +50,7 @@ class VKManager(BaseManager):
             follow_redirects=True,
         )
         self._initialized = True
-        log("🌐 [VK] Клиент запущен и готов к работе.")
+        log("🌐 [VK] Готов к работе.", indent=1)
 
     async def update_config(self, settings: Settings) -> None:
         """Handles configuration updates."""
@@ -59,10 +59,10 @@ class VKManager(BaseManager):
             return
 
         if self._token == settings.vk_service_token:
-            log("🌐 [VK] Конфиг обновлён, токен не изменился.")
+            log("🌐 [VK] Конфигурация обновлена, без изменений.", indent=1)
             return
 
-        log("🌐 [VK] Токен изменился, перезапускаю клиент...")
+        log("🌐 [VK] Конфигурация изменилась, перезапуск...", indent=1)
         await self.shutdown()
         await self.setup(settings)
 
@@ -70,11 +70,11 @@ class VKManager(BaseManager):
         """Initiates shutdown and closes the client."""
         if not self._initialized:
             return
-        log("🌐 [VK] Инициирую остановку клиента...")
+        log("🌐 [VK] Завершение работы...", indent=1)
         if self._client and not self._client.is_closed:
             await self._client.aclose()
         self._initialized = False
-        log("🌐 [VK] Клиент остановлен.")
+        log("🌐 [VK] Остановлен.", indent=1)
 
     async def __aenter__(self) -> VKManager:
         """Enter the async context manager."""
@@ -136,8 +136,10 @@ class VKManager(BaseManager):
                     resp.raise_for_status()
                     async with await anyio.open_file(save_path, "wb") as f:
                         async for chunk in resp.aiter_bytes():
+                            if self._shutdown_event and self._shutdown_event.is_set():
+                                raise asyncio.CancelledError("Shutdown requested")
                             await f.write(chunk)
-                log(f"✅ [VK] Файл сохранён: {save_path.name}", indent=1)
+                log(f"✅ [VK] Файл сохранён: {save_path.name}", indent=5)
                 return save_path
 
             except asyncio.CancelledError:

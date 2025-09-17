@@ -2,6 +2,7 @@ from pathlib import Path
 
 from pymediainfo import MediaInfo
 
+from ..exceptions import PostProcessingError
 from ..managers.vk_manager import VKManager
 from ..managers.ytdlp_manager import YTDLPManager
 from ..models.dto import (
@@ -74,12 +75,11 @@ class PostProcessor:
     def _process_text(self, text: str) -> str:
         return normalize_links(text)
 
-    async def _process_video(self, video: VkVideo) -> PreparedVideoAttachment | None:
+    async def _process_video(self, video: VkVideo) -> PreparedVideoAttachment:
         log("🎬 Обрабатываю видео...", indent=4)
         video_path = await self.ytdlp.download_video(video.url)
         if not video_path:
-            log("❌ Не удалось скачать видео.", indent=5)
-            return None
+            raise PostProcessingError("❌ Не удалось скачать видео.")
 
         thumb_path = None
         best_thumb = self._find_best_thumbnail(video.image)
@@ -91,16 +91,16 @@ class PostProcessor:
             media_info = MediaInfo.parse(str(video_path))
             video_track = next((track for track in media_info.tracks if track.track_type == "Video"), None)
             if not video_track or not video_track.width or not video_track.height:
-                log(f"❌ Не удалось найти видео-дорожку или ее размеры в файле: {video_path.name}", indent=5)
-                return None
+                raise PostProcessingError(
+                    f"❌ Не удалось найти видео-дорожку или ее размеры в файле: {video_path.name}"
+                )
             width, height = video_track.width, video_track.height
         except Exception as e:
-            log(f"❌ Не удалось получить метаданные видео: {e}", indent=5)
-            return None
+            raise PostProcessingError(f"❌ Не удалось получить метаданные видео: {e}") from e
 
         return PreparedVideoAttachment(
             file_path=video_path,
-            filename=(video.title or f"{video.owner_id}_{video.id}") + ".mp4",
+            filename=(video.title or f"{video.owner_id}_{video.id}") + video_path.suffix,
             width=width,
             height=height,
             thumbnail_path=thumb_path,
@@ -108,7 +108,7 @@ class PostProcessor:
 
     def _find_best_thumbnail(self, images: list[VkCoverSize], target_ratio: float = 16 / 9) -> VkCoverSize | None:
         log("🌟 Выбираю лучшую обложку...", indent=5)
-        TARGET = 320
+        TARGET = 1280
         if not images:
             return None
 
@@ -141,27 +141,25 @@ class PostProcessor:
 
         return sorted(candidates, key=sort_key)[0]
 
-    async def _process_photo(self, photo: VkPhoto) -> PreparedPhotoAttachment | None:
+    async def _process_photo(self, photo: VkPhoto) -> PreparedPhotoAttachment:
         log("📸 Обрабатываю фото...", indent=4)
         photo_path = await self.vk.download_file(photo.max_size_url, Path("downloads/photos"))
         if not photo_path:
-            log("❌ Не удалось скачать фото.", indent=5)
-            return None
+            raise PostProcessingError("❌ Не удалось скачать фото.")
 
         return PreparedPhotoAttachment(
             file_path=photo_path,
             filename=photo_path.name,
         )
 
-    async def _process_audio(self, audio: VkAudio) -> PreparedAudioAttachment | None:
+    async def _process_audio(self, audio: VkAudio) -> PreparedAudioAttachment:
         log("🎵 Обрабатываю аудио...", indent=4)
 
         download_dir = Path("downloads/audio")
         audio_path = await self.vk.download_file(url=audio.url, download_path=download_dir)
 
         if not audio_path:
-            log("❌ Не удалось скачать аудио.", indent=5)
-            return None
+            raise PostProcessingError("❌ Не удалось скачать аудио.")
 
         # TODO: add file name sanitization for Windows/Linux
         filename = f"{audio.artist} - {audio.title}{audio_path.suffix}"
@@ -173,15 +171,14 @@ class PostProcessor:
             title=audio.title,
         )
 
-    async def _process_doc(self, doc: VkDoc) -> PreparedDocumentAttachment | None:
+    async def _process_doc(self, doc: VkDoc) -> PreparedDocumentAttachment:
         log("📄 Обрабатываю документ...", indent=4)
 
         download_dir = Path("downloads/docs")
         doc_path = await self.vk.download_file(url=doc.url, download_path=download_dir)
 
         if not doc_path:
-            log("❌ Не удалось скачать документ.", indent=5)
-            return None
+            raise PostProcessingError("❌ Не удалось скачать документ.")
 
         filename = f"{doc.title}{doc_path.suffix}"
 

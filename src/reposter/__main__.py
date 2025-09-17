@@ -4,6 +4,7 @@ from pathlib import Path
 
 from .core.composition import DefaultAppComposer
 from .interfaces.app_composer import AppComposer
+from .utils.log import log
 
 
 async def main(composer: AppComposer):
@@ -15,7 +16,7 @@ async def main(composer: AppComposer):
         await app.run()
 
     except Exception as e:
-        print(f"❌ Критическая ошибка: {e}")
+        log(f"❌ Критическая ошибка: {e}")
         sys.exit(1)
 
 

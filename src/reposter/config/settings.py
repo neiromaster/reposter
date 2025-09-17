@@ -12,6 +12,8 @@ from pydantic_settings import (
     SettingsConfigDict,
 )
 
+from ..utils.log import log
+
 CHANNEL_ID_RE: Final[re.Pattern[str]] = re.compile(r"^(@[A-Za-z0-9_]+|\d+)$")
 
 
@@ -114,11 +116,11 @@ class Settings(BaseSettings):
                             self._data = loaded
                             self._last_mtime = self.yaml_path.stat().st_mtime
                             self._file_read = True
-                            print("🔁 Конфиг перезагружен из YAML")
+                            log("🔁 Конфиг перезагружен из YAML")
                         else:
                             self._data = {}
                 except Exception as e:
-                    print(f"⚠️ Ошибка при чтении {self.yaml_path}: {e}")
+                    log(f"⚠️ Ошибка при чтении {self.yaml_path}: {e}")
             return self._data
 
         def get_field_value(self, field: Any, field_name: str) -> tuple[Any, str, bool]:
@@ -166,4 +168,4 @@ class Settings(BaseSettings):
 
 if __name__ == "__main__":
     settings = Settings.load()
-    print(settings.model_dump())
+    log(f"⚙️ {str(settings.model_dump())}")

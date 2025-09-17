@@ -40,6 +40,8 @@ def _ytdlp_worker(url: str, opts: dict[str, Any], out_q: Queue[Result]) -> None:
             info = ydl.extract_info(url, download=True)
             downloaded_file = ydl.prepare_filename(info)
             out_q.put(("success", downloaded_file))
+    except KeyboardInterrupt:
+        pass  # Suppress traceback on Ctrl+C
     except Exception as e:
         out_q.put(("error", str(e)))
 
@@ -60,10 +62,10 @@ class YTDLPManager(BaseManager):
 
     async def setup(self, settings: Settings) -> None:
         """Prepare the manager for downloading."""
-        log("🎥 [YTDLP] Инициализация YTDLP Manager...")
+        log("🎥 [YTDLP] Запуск...", indent=1)
         self._downloader_config = settings.downloader
         self._initialized = True
-        log("🎥 [YTDLP] Готов к работе.")
+        log("🎥 [YTDLP] Готов к работе.", indent=1)
 
     async def update_config(self, settings: Settings) -> None:
         """Called when the configuration changes."""
@@ -71,16 +73,16 @@ class YTDLPManager(BaseManager):
             await self.setup(settings)
             return
         self._downloader_config = settings.downloader
-        log("🎥 [YTDLP] Конфиг обновлён.")
+        log("🎥 [YTDLP] Конфигурация обновлена.", indent=1)
 
     async def shutdown(self) -> None:
         """Terminate any active download process."""
         if not self._initialized:
             return
-        log("🎥 [YTDLP] Завершение работы...")
+        log("🎥 [YTDLP] Завершение работы...", indent=1)
         await self._terminate_active()
         self._initialized = False
-        log("🎥 [YTDLP] Остановлен.")
+        log("🎥 [YTDLP] Остановлен.", indent=1)
 
     async def __aenter__(self) -> YTDLPManager:
         """Enter the async context manager."""
@@ -98,7 +100,7 @@ class YTDLPManager(BaseManager):
     async def _terminate_active(self) -> None:
         proc = self._active_proc
         if proc and proc.is_alive():
-            log("🛑 Прерываю активную загрузку yt-dlp...", indent=2)
+            log("🛑 Прерываю активную загрузку yt-dlp...", indent=4)
             proc.terminate()
             for _ in range(20):
                 if not proc.is_alive():
@@ -218,7 +220,7 @@ class YTDLPManager(BaseManager):
         while proc.is_alive():
             if self._shutdown_event and self._shutdown_event.is_set():
                 await self._terminate_active()
-                return None
+                raise asyncio.CancelledError()
             try:
                 return out_q.get_nowait()
             except Exception:

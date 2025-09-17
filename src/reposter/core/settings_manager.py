@@ -2,6 +2,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
 from ..utils.deep_diff import deep_diff
+from ..utils.log import log
 
 if TYPE_CHECKING:
     from ..config.settings import Settings
@@ -44,16 +45,16 @@ class SettingsManager:
                 if self._settings is not None:
                     changes = deep_diff(self._settings, new_settings)
                     if changes:
-                        print("📝 Обнаружены изменения в конфигурации:")
+                        log("📝 Обнаружены изменения в конфигурации:")
                         for change in changes:
-                            print(f"   {change}")
+                            log(change, indent=2)
                     else:
-                        print("ℹ️ Конфиг изменился, но содержимое идентично.")
+                        log("ℹ️ Конфиг изменился, но содержимое идентично.")
 
                 self._settings = new_settings
-                print("✅ Настройки перезагружены")
+                log("✅ Настройки перезагружены")
             except Exception as e:
-                print(f"❌ Ошибка при перезагрузке конфига: {e}. Использую старую версию.")
+                log(f"❌ Ошибка при перезагрузке конфига: {e}. Использую старую версию.")
                 if self._settings is None:
                     raise
         return self._settings

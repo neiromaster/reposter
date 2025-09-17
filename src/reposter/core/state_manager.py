@@ -40,7 +40,7 @@ async def get_last_post_id(domain: str, state_file: Path) -> int:
 
 async def set_last_post_id(domain: str, post_id: int, state_file: Path) -> None:
     """Writes the last processed post ID for a specific domain to the state file."""
-    log(f"💾 Записываю ID последнего поста для {domain} в {state_file}...", indent=3)
+    log(f"💾 Записываю ID последнего поста для {domain} в {state_file}...", indent=3, padding_top=1)
     state = await _load_state(state_file)
     state.root[domain] = post_id
     await _save_state(state, state_file)
