@@ -3,7 +3,7 @@ from pathlib import Path
 from pymediainfo import MediaInfo
 
 from ..exceptions import PostProcessingError
-from ..managers.vk_manager import VKManager
+from ..managers.vk_user_manager import VKUserManager
 from ..managers.ytdlp_manager import YTDLPManager
 from ..models.dto import (
     Audio as VkAudio,
@@ -35,7 +35,7 @@ from ..utils.text_utils import normalize_links, sanitize_filename, sanitize_for_
 
 
 class PostProcessor:
-    def __init__(self, vk_manager: VKManager, ytdlp_manager: YTDLPManager) -> None:
+    def __init__(self, vk_manager: VKUserManager, ytdlp_manager: YTDLPManager) -> None:
         self.vk = vk_manager
         self.ytdlp = ytdlp_manager
 

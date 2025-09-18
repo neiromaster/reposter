@@ -10,7 +10,7 @@ from ..core.post_processor import PostProcessor
 from ..core.state_manager import get_last_post_id, set_last_post_id
 from ..interfaces.task_executor import BaseTaskExecutor
 from ..managers.telegram_manager import TelegramManager
-from ..managers.vk_manager import VKManager
+from ..managers.vk_user_manager import VKUserManager
 from ..managers.ytdlp_manager import YTDLPManager
 from ..models.dto import Post as VkPost
 from ..utils.cleaner import delete_files_async
@@ -38,7 +38,7 @@ class BindingTaskExecutor(BaseTaskExecutor):
 
     def __init__(
         self,
-        vk_manager: VKManager,
+        vk_manager: VKUserManager,
         telegram_manager: TelegramManager,
         ytdlp_manager: YTDLPManager,
         post_processor: PostProcessor,
@@ -70,7 +70,9 @@ class BindingTaskExecutor(BaseTaskExecutor):
             )
 
             try:
-                last_post_id = await get_last_post_id(binding.vk.domain, settings.app.state_file)
+                last_post_id = await get_last_post_id(
+                    binding.vk.domain, binding.vk.post_source, settings.app.state_file
+                )
 
                 posts = await self.vk_manager.get_vk_wall(
                     domain=binding.vk.domain,
@@ -100,7 +102,9 @@ class BindingTaskExecutor(BaseTaskExecutor):
 
                         if not prepared_post.attachments and not prepared_post.text:
                             log("⚠️ Пост пустой после обработки, пропускаю.", indent=4)
-                            await set_last_post_id(binding.vk.domain, post.id, settings.app.state_file)
+                            await set_last_post_id(
+                                binding.vk.domain, post.id, binding.vk.post_source, settings.app.state_file
+                            )
                             continue
 
                         log(f"✈️ Публикую пост {post.id} в Telegram каналы...", indent=3, padding_top=1)
@@ -108,7 +112,9 @@ class BindingTaskExecutor(BaseTaskExecutor):
 
                         await delete_files_async(prepared_post.attachments)
 
-                        await set_last_post_id(binding.vk.domain, post.id, settings.app.state_file)
+                        await set_last_post_id(
+                            binding.vk.domain, post.id, binding.vk.post_source, settings.app.state_file
+                        )
                         log(f"✅ Пост {post.id} успешно обработан и опубликован.", indent=4)
 
                     except Exception as e:

@@ -70,6 +70,7 @@ class DownloaderConfig(BaseModel):
 
 class Settings(BaseSettings):
     vk_service_token: str = Field(..., alias="VK_SERVICE_TOKEN")
+    vk_user_token: str | None = Field(default=None, alias="VK_USER_TOKEN")
     telegram_api_id: int = Field(..., alias="TELEGRAM_API_ID")
     telegram_api_hash: str = Field(..., alias="TELEGRAM_API_HASH")
 

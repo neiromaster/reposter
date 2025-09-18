@@ -2,7 +2,7 @@ from ..executors.binding_task_executor import BindingTaskExecutor
 from ..interfaces.app_composer import AppComposer
 from ..interfaces.app_manager import BaseAppManager
 from ..managers.telegram_manager import TelegramManager
-from ..managers.vk_manager import VKManager
+from ..managers.vk_user_manager import VKUserManager
 from ..managers.ytdlp_manager import YTDLPManager
 from .app_manager import AppManager
 from .post_processor import PostProcessor
@@ -11,7 +11,7 @@ from .post_processor import PostProcessor
 class DefaultAppComposer(AppComposer):
     def compose_app(self, debug: bool = False) -> BaseAppManager:
         ytdlp_manager = YTDLPManager()
-        vk_manager = VKManager()
+        vk_manager = VKUserManager()
         telegram_manager = TelegramManager()
 
         post_processor = PostProcessor(

@@ -115,8 +115,8 @@ class WallGetResponse(BaseModel):
     items: list[Post]
 
 
-class State(RootModel[dict[str, int]]):
-    root: dict[str, int] = Field(default_factory=dict)
+class State(RootModel[dict[str, dict[str, int]]]):
+    root: dict[str, dict[str, int]] = Field(default_factory=dict)
 
 
 # --- TypedDicts for raw API responses ---
