@@ -14,7 +14,7 @@ from pydantic_settings import (
 
 from ..utils.log import log
 
-CHANNEL_ID_RE: Final[re.Pattern[str]] = re.compile(r"^(@[A-Za-z0-9_]+|\d+)$")
+CHANNEL_ID_RE: Final[re.Pattern[str]] = re.compile(r"^(@[A-Za-z0-9_]+|-?\d+)$")
 
 
 class AppConfig(BaseModel):
@@ -30,17 +30,20 @@ class VKConfig(BaseModel):
 
 
 class TelegramConfig(BaseModel):
-    channel_ids: list[str]
+    channel_ids: list[Any]
 
     @field_validator("channel_ids")
     @classmethod
-    def validate_channel_ids(cls, v: list[str]) -> list[str]:
+    def validate_channel_ids(cls, v: list[Any]) -> list[str]:
         if not v:
             raise ValueError("Список channel_ids не может быть пустым")
-        for ch in v:
+
+        str_v = [str(ch) for ch in v]
+
+        for ch in str_v:
             if not CHANNEL_ID_RE.match(ch):
                 raise ValueError(f"Некорректный формат channel_id: {ch}. Используйте @username или числовой ID.")
-        return v
+        return str_v
 
 
 class BindingConfig(BaseModel):
