@@ -30,6 +30,7 @@ from ..models.dto import (
 )
 from ..utils.cleaner import delete_files_async
 from ..utils.log import log
+from ..utils.text_utils import sanitize_filename_for_telegram
 
 
 class TelegramManager(BaseManager):
@@ -175,9 +176,11 @@ class TelegramManager(BaseManager):
                     progress_callback = self._create_progress_callback(indent=4)
 
                     if isinstance(attachment, PreparedVideoAttachment):
+                        filename = sanitize_filename_for_telegram(attachment.filename)
+
                         video_kwargs: dict[str, Any] = {
                             "video": str(attachment.file_path),
-                            "file_name": attachment.filename,
+                            "file_name": filename,
                             "width": attachment.width,
                             "height": attachment.height,
                             "progress": progress_callback,
@@ -189,10 +192,11 @@ class TelegramManager(BaseManager):
                             media_object = InputMediaVideo(media=msg.video.file_id)
 
                     elif isinstance(attachment, PreparedAudioAttachment):
+                        filename = sanitize_filename_for_telegram(attachment.filename)
                         msg = await self._client.send_audio(  # type: ignore[reportUnknownMemberType]
                             chat_id="me",
                             audio=str(attachment.file_path),
-                            file_name=attachment.filename,
+                            file_name=filename,
                             performer=attachment.artist,
                             title=attachment.title,
                             progress=progress_callback,
@@ -202,16 +206,19 @@ class TelegramManager(BaseManager):
 
                     elif isinstance(attachment, PreparedPhotoAttachment):
                         msg = await self._client.send_photo(  # type: ignore[reportUnknownMemberType]
-                            chat_id="me", photo=str(attachment.file_path), progress=progress_callback
+                            chat_id="me",
+                            photo=str(attachment.file_path),
+                            progress=progress_callback,
                         )
                         if msg and msg.photo:
                             media_object = InputMediaPhoto(media=msg.photo.file_id)
 
                     elif isinstance(attachment, PreparedDocumentAttachment):
+                        filename = sanitize_filename_for_telegram(attachment.filename)
                         msg = await self._client.send_document(  # type: ignore[reportUnknownMemberType]
                             chat_id="me",
                             document=str(attachment.file_path),
-                            file_name=attachment.filename,
+                            file_name=filename,
                             progress=progress_callback,
                         )
                         if msg and msg.document:

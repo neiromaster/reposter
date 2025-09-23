@@ -31,7 +31,7 @@ async def _save_state(state: State, state_file: Path) -> None:
 
 async def get_last_post_id(domain: str, post_source: str, state_file: Path) -> int:
     """Reads the last processed post ID for a specific domain and source from the state file."""
-    log(f"💾 Читаю ID последнего поста для {domain} ({post_source}) из {state_file}...", indent=1, padding_top=1)
+    log(f"💾 Читаю ID последнего поста для {domain} ({post_source}) из {state_file}...", indent=1)
     state = await _load_state(state_file)
 
     domain_state = state.root.get(domain)

@@ -31,7 +31,7 @@ from ..models.dto import (
     Video as VkVideo,
 )
 from ..utils.log import log
-from ..utils.text_utils import normalize_links, sanitize_filename, sanitize_for_telegram
+from ..utils.text_utils import normalize_links
 
 
 class PostProcessor:
@@ -98,8 +98,7 @@ class PostProcessor:
         except Exception as e:
             raise PostProcessingError(f"❌ Не удалось получить метаданные видео: {e}") from e
 
-        base_filename = sanitize_filename(video.title or f"{video.owner_id}_{video.id}")
-        filename = sanitize_for_telegram(base_filename) + video_path.suffix
+        filename = (video.title or f"{video.owner_id}_{video.id}") + video_path.suffix
 
         return PreparedVideoAttachment(
             file_path=video_path,
@@ -147,8 +146,7 @@ class PostProcessor:
         if not photo_path:
             raise PostProcessingError("❌ Не удалось скачать фото.")
 
-        base_filename = sanitize_filename(photo_path.stem)
-        filename = sanitize_for_telegram(base_filename) + photo_path.suffix
+        filename = photo_path.stem + photo_path.suffix
 
         return PreparedPhotoAttachment(
             file_path=photo_path,
@@ -164,8 +162,7 @@ class PostProcessor:
         if not audio_path:
             raise PostProcessingError("❌ Не удалось скачать аудио.")
 
-        base_filename = sanitize_filename(f"{audio.artist} - {audio.title}")
-        filename = sanitize_for_telegram(base_filename) + audio_path.suffix
+        filename = f"{audio.artist} - {audio.title}" + audio_path.suffix
 
         return PreparedAudioAttachment(
             file_path=audio_path,
@@ -183,8 +180,7 @@ class PostProcessor:
         if not doc_path:
             raise PostProcessingError("❌ Не удалось скачать документ.")
 
-        base_filename = sanitize_filename(doc.title)
-        filename = sanitize_for_telegram(base_filename) + doc_path.suffix
+        filename = doc.title + doc_path.suffix
 
         return PreparedDocumentAttachment(
             file_path=doc_path,

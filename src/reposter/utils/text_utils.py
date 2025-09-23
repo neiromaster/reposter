@@ -1,4 +1,5 @@
 import re
+from pathlib import Path
 from re import Match
 from urllib.parse import urlparse
 
@@ -97,3 +98,13 @@ def sanitize_for_telegram(filename: str) -> str:
     sanitized = re.sub(r"[\[\]()]", " ", filename)
     sanitized = re.sub(r"\s+", " ", sanitized)
     return sanitized.strip()
+
+
+def sanitize_filename_for_telegram(raw_filename: str) -> str:
+    """Sanitizes a filename for Telegram, preserving the extension."""
+    p = Path(raw_filename)
+    name = p.stem
+    ext = p.suffix
+    sanitized_name = sanitize_filename(name)
+    sanitized_name = sanitize_for_telegram(sanitized_name)
+    return sanitized_name + ext
