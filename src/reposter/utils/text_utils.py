@@ -108,3 +108,26 @@ def sanitize_filename_for_telegram(raw_filename: str) -> str:
     sanitized_name = sanitize_filename(name)
     sanitized_name = sanitize_for_telegram(sanitized_name)
     return sanitized_name + ext
+
+
+def extract_tags_from_text(text: str) -> list[str]:
+    """Extracts tags from the last line of the text."""
+    if not text:
+        return []
+
+    lines = text.strip().splitlines()
+    if not lines:
+        return []
+
+    last_line = lines[-1].strip()
+    if not last_line:
+        return []
+
+    words = last_line.split()
+    if not words:
+        return []
+
+    if not all(word.startswith("#") for word in words):
+        return []
+
+    return [word.lstrip("#").replace("_", " ") for word in words]

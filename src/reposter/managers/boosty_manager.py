@@ -17,6 +17,7 @@ from ..config.settings import BoostyConfig, Settings
 from ..interfaces.base_manager import BaseManager
 from ..models.dto import BoostyAuthData, PreparedVideoAttachment, TelegramPost
 from ..utils.log import log
+from ..utils.text_utils import extract_tags_from_text
 
 
 class BoostyManager(BaseManager):
@@ -265,11 +266,12 @@ class BoostyManager(BaseManager):
             {"content": "", "type": "text", "modificator": "BLOCK_END"},
         ]
 
+        tags = extract_tags_from_text(post.text or "")
         form_data = {
             "title": "Новый пост",
             "data": json.dumps(content_blocks),
             "teaser_data": json.dumps(teaser_blocks),
-            "tags": "",
+            "tags": json.dumps(tags),
             "deny_comments": "false",
             "wait_video": "false",
             "price": 0,
