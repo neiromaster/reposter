@@ -57,7 +57,7 @@ class BoostyManager(BaseManager):
 
     async def _authorize(self, blog_name: str) -> None:
         """Authorize using auth.json file for specific blog."""
-        log(f"Авторизация в Boosty для блога {blog_name}...", indent=2)
+        log(f"Авторизация в Boosty для блога {blog_name}...", indent=4)
 
         if not os.path.exists(self._auth_path):
             raise FileNotFoundError(f"Файл авторизации не найден: {self._auth_path}")
@@ -82,7 +82,7 @@ class BoostyManager(BaseManager):
                     "x-app": "web",
                 }
             )
-        log("Авторизация успешна!", indent=2)
+        log("Авторизация успешна!", indent=4)
 
     async def update_config(self, settings: Settings) -> None:
         """Handles configuration updates."""
@@ -138,7 +138,7 @@ class BoostyManager(BaseManager):
         file_size = os.path.getsize(video_path)
         filename = os.path.basename(video_path)
 
-        log(f"📥 [Boosty] Шаг 1/3: Получение URL для загрузки видео: {filename}", indent=2)
+        log(f"📥 [Boosty] Шаг 1/3: Получение URL для загрузки видео: {filename}", indent=4)
 
         prepare_url = urljoin(self.BASE_URL, "/v1/media_data/video/upload_url")
         params = {"file_name": filename, "container_type": "post_draft"}
@@ -154,11 +154,19 @@ class BoostyManager(BaseManager):
         upload_url = upload_data["uploadUrl"]
         media_id = upload_data["id"]
 
-        log(f"📥 [Boosty] URL получен. Временный ID: {media_id}", indent=2)
-        log("📥 [Boosty] Шаг 2/3: Загрузка видеофайла (последовательно с повторными попытками)...", indent=2)
+        log(f"📥 [Boosty] URL получен. Временный ID: {media_id}", indent=4)
+        log("📥 [Boosty] Шаг 2/3: Загрузка видеофайла (последовательно с повторными попытками)...", indent=4)
 
         async with aiofiles.open(video_path, "rb") as f:
-            with tqdm(total=file_size, unit="B", unit_scale=True, desc="Загрузка", mininterval=0.5) as pbar:
+            with tqdm(
+                total=file_size / (1024 * 1024),
+                unit="MB",
+                unit_scale=False,
+                desc="  " * 4 + "🚀 ",
+                ncols=80,
+                mininterval=0.5,
+                bar_format="{desc}{bar}| {n:.0f} / {total:.0f} {unit} | {elapsed} < {remaining} | {rate_fmt}{postfix}",
+            ) as pbar:
                 offset = 0
                 chunk_size = 1024 * 1024  # 1MB chunks
                 while True:
@@ -210,10 +218,10 @@ class BoostyManager(BaseManager):
                                 raise Exception(f"Не удалось загрузить чанк после {max_retries} попыток: {e}") from None
 
                     offset += len(chunk)
-                    pbar.update(len(chunk))
+                    pbar.update(len(chunk) / (1024 * 1024))
 
-        log("📥 [Boosty] Видеофайл загружен.", indent=2)
-        log("📥 [Boosty] Шаг 3/3: Завершение загрузки на сервере Boosty...", indent=2)
+        log("📥 [Boosty] Видеофайл загружен.", indent=4)
+        log("📥 [Boosty] Шаг 3/3: Завершение загрузки на сервере Boosty...", indent=4)
 
         finish_url = urljoin(self.BASE_URL, f"/v1/media_data/video/{media_id}/finish")
         finish_response = await self._client.post(finish_url)
@@ -224,77 +232,88 @@ class BoostyManager(BaseManager):
             raise Exception(f"Ошибка завершения загрузки: {finish_response.status_code} - {finish_response.text}")
 
         video_data = finish_response.json()
-        log(f"📥 [Boosty] Загрузка завершена. Итоговый ID видео: {video_data.get('id')}", indent=2)
+        log(f"📥 [Boosty] Загрузка завершена. Итоговый ID видео: {video_data.get('id')}", indent=4)
 
         return video_data
 
-    async def create_post(self, boosty_config: BoostyConfig, post: TelegramPost) -> dict[str, Any] | None:
-        """Creates a post on Boosty."""
-        if not self._initialized:
+    async def create_post(self, boosty_config: BoostyConfig, post: TelegramPost) -> list[dict[str, Any]]:
+        """Creates a post on Boosty for each video attachment."""
+        if not self._initialized or not self._client:
             raise RuntimeError("Boosty manager not initialized. Call setup() first.")
 
         self._check_shutdown()
-
         await self._authorize(boosty_config.blog_name)
 
-        log(f"📤 [Boosty] Публикация поста в блог {boosty_config.blog_name}", indent=2)
+        results: list[dict[str, Any]] = []
+        video_attachments = [att for att in post.attachments if isinstance(att, PreparedVideoAttachment)]
 
-        video_data = None
-        for attachment in post.attachments:
-            if isinstance(attachment, PreparedVideoAttachment):
-                try:
-                    video_data = await self.upload_video(attachment.file_path)
-                    break
-                except Exception as e:
-                    log(f"❌ [Boosty] Ошибка загрузки видео: {e}", indent=3)
+        if not video_attachments:
+            log("📤 [Boosty] Нет видео для публикации, пост пропускается.", indent=4)
+            return []
 
+        for attachment in video_attachments:
             self._check_shutdown()
+            try:
+                log(f"📤 [Boosty] Публикация поста в блог {boosty_config.blog_name}", indent=4)
+                video_data = await self.upload_video(attachment.file_path)
+                if not video_data:
+                    log(f"❌ [Boosty] Не удалось загрузить видео {attachment.file_path}, пропуск.", indent=3)
+                    continue
 
-        content_blocks: list[dict[str, Any]] = []
-        if video_data:
-            content_blocks.append(video_data)
-        if post.text:
-            content_blocks.append(
-                {"type": "text", "modificator": "", "content": json.dumps([post.text, "unstyled", []])}
-            )
-        if content_blocks:
-            content_blocks.append({"content": "", "type": "text", "modificator": "BLOCK_END"})
+                post_title = Path(attachment.filename).stem
 
-        teaser_text = (post.text or "Новый пост")[:150]
-        teaser_blocks = [
-            {"type": "text", "modificator": "", "content": json.dumps([teaser_text, "unstyled", []])},
-            {"content": "", "type": "text", "modificator": "BLOCK_END"},
-        ]
+                content_blocks: list[dict[str, Any]] = [video_data]
+                # if post.text:
+                #     content_blocks.append(
+                #         {"type": "text", "modificator": "", "content": json.dumps([post.text, "unstyled", []])}
+                #     )
+                content_blocks.append({"content": "", "type": "text", "modificator": "BLOCK_END"})
 
-        tags = extract_tags_from_text(post.text or "")
-        form_data = {
-            "title": "Новый пост",
-            "data": json.dumps(content_blocks),
-            "teaser_data": json.dumps(teaser_blocks),
-            "tags": json.dumps(tags),
-            "deny_comments": "false",
-            "wait_video": "false",
-            "price": 0,
-        }
+                teaser_text = (post_title)[:150]
+                teaser_blocks = [
+                    {"type": "text", "modificator": "", "content": json.dumps([teaser_text, "unstyled", []])},
+                    {"content": "", "type": "text", "modificator": "BLOCK_END"},
+                ]
 
-        publish_url = urljoin(self.BASE_URL, f"/v1/blog/{self._blog_name}/post_draft/publish/")
+                tags = extract_tags_from_text(post.text or "")
+                form_data: dict[str, Any] = {
+                    "title": post_title,
+                    "data": json.dumps(content_blocks),
+                    "teaser_data": json.dumps(teaser_blocks),
+                    "tags": ",".join(tags),
+                    "deny_comments": "false",
+                    "wait_video": "false",
+                }
 
-        log("📤 [Boosty] Публикация поста...", indent=3)
+                if boosty_config.subscription_level_id:
+                    form_data["subscription_level_id"] = boosty_config.subscription_level_id
+                else:
+                    form_data["price"] = 0
 
-        if not self._client:
-            raise RuntimeError("HTTP client not initialized")
+                publish_url = urljoin(self.BASE_URL, f"/v1/blog/{self._blog_name}/post_draft/publish/")
 
-        response = await self._client.post(publish_url, data=form_data)
+                log(f"📤 [Boosty] Публикация поста '{post_title}'...", indent=3)
 
-        self._check_shutdown()
+                response = await self._client.post(publish_url, data=form_data)
 
-        if response.status_code != 200:
-            raise Exception(f"Ошибка публикации поста: {response.status_code} — {response.text}")
+                self._check_shutdown()
 
-        result = response.json()
-        post_data = result.get("data", {}).get("post", {})
-        post_id = post_data.get("id")
-        post_url = f"https://boosty.to/{self._blog_name}/posts/{post_id}" if post_id else "Не удалось получить ссылку"
+                if response.status_code != 200:
+                    log(f"❌ [Boosty] Ошибка публикации поста: {response.status_code} — {response.text}", indent=3)
+                    continue
 
-        log(f"📤 [Boosty] Пост успешно опубликован! Ссылка: {post_url}", indent=3)
-        return result
+                result = response.json()
+                post_data = result.get("data", {}).get("post", {})
+                post_id = post_data.get("id")
+                post_url = (
+                    f"https://boosty.to/{self._blog_name}/posts/{post_id}" if post_id else "Не удалось получить ссылку"
+                )
+
+                log(f"📤 [Boosty] Пост успешно опубликован! Ссылка: {post_url}", indent=3)
+                results.append(result)
+
+            except Exception as e:
+                log(f"❌ [Boosty] Ошибка при обработке видео {attachment.file_path}: {e}", indent=3)
+                continue
+
+        return results
