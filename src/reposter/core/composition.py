@@ -1,6 +1,7 @@
 from ..executors.binding_task_executor import BindingTaskExecutor
 from ..interfaces.app_composer import AppComposer
 from ..interfaces.app_manager import BaseAppManager
+from ..managers.boosty_manager import BoostyManager
 from ..managers.telegram_manager import TelegramManager
 from ..managers.vk_user_manager import VKUserManager
 from ..managers.ytdlp_manager import YTDLPManager
@@ -13,6 +14,7 @@ class DefaultAppComposer(AppComposer):
         ytdlp_manager = YTDLPManager()
         vk_manager = VKUserManager()
         telegram_manager = TelegramManager()
+        boosty_manager = BoostyManager()
 
         post_processor = PostProcessor(
             vk_manager=vk_manager,
@@ -24,8 +26,9 @@ class DefaultAppComposer(AppComposer):
             telegram_manager=telegram_manager,
             ytdlp_manager=ytdlp_manager,
             post_processor=post_processor,
+            boosty_manager=boosty_manager,
             debug=debug,
         )
 
-        managers = [ytdlp_manager, vk_manager, telegram_manager]
+        managers = [ytdlp_manager, vk_manager, telegram_manager, boosty_manager]
         return AppManager(managers=managers, task_executor=task_executor)

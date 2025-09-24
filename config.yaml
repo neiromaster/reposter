@@ -7,13 +7,13 @@ app:
   # Name of the session file for the Telegram user account
   session_name: "user_session"
 
-# A list of VK to Telegram bindings
+# A list of VK to Telegram/Boosty bindings
 bindings:
 - vk:
     # Short name or ID of the community wall to monitor
     domain: "somegroup"
     # Number of posts to fetch in each check
-    post_count: 20
+    post_count: 10
     # Source of posts: "wall" for public posts, "donut" for VK Donut posts
     post_source: "wall"
   telegram:
@@ -21,6 +21,22 @@ bindings:
     channel_ids:
     - "@firstid"
     - "@secondid"
+  boosty:
+    # Your Boosty blog name (the part after boosty.to/ in the URL)
+    blog_name: "my_boosty_blog"
+
+- vk:
+    # Short name or ID of the community wall to monitor
+    domain: "somesecondgroup"
+    # Number of posts to fetch in each check
+    post_count: 10
+    # Source of posts: "wall" for public posts, "donut" for VK Donut posts
+    post_source: "donut"
+  telegram:
+    # List of your channel usernames (e.g., @channel_name) or numeric IDs
+    channel_ids:
+    - "@secondid1"
+    - "@secondid2"
 
 # Video downloader settings
 downloader:
@@ -35,12 +51,10 @@ downloader:
     # Number of retries for a failed download
     count: 3
     # Initial delay between retries, in seconds (increases exponentially)
-    delay_seconds: 10
-  # yt-dlp options for downloading
+    delay_seconds: 10 # yt-dlp options for downloading
   yt_dlp_opts:
-    # Number of fragments to download concurrently
-    concurrent_fragment_downloads: 5
-    # Skip unavailable fragments
+    format: "best[height<=1080]/bestvideo[height<=1080]+bestaudio"
+    # Skip unavailable fragments    
     skip_unavailable_fragments: false
     # Number of retries for each fragment
     fragment_retries: 50
@@ -51,10 +65,11 @@ downloader:
       default: "aria2c"
       dash: "native"
       m3u8: "native"
+    merge_output_format: mp4
+    concurrent_fragments: 8
     # Arguments for the external downloader
     external_downloader_args:
       aria2c:
-      - "-x"
-      - "5"
-      - "-s"
-      - "5"
+      # - "-x5"
+      # - "-s5"
+      - "-k1M"

@@ -51,14 +51,14 @@ class YTDLPManager(BaseManager):
 
     def __init__(self) -> None:
         """Initialize the manager."""
+        super().__init__()
         self._initialized = False
-        self._shutdown_event: Event | None = None
         self._active_proc: Process | None = None
         self._downloader_config: DownloaderConfig | None = None
 
     def set_shutdown_event(self, event: Event) -> None:
         """Sets the shutdown event from the AppManager."""
-        self._shutdown_event = event
+        super().set_shutdown_event(event)
 
     async def setup(self, settings: Settings) -> None:
         """Prepare the manager for downloading."""
@@ -150,8 +150,7 @@ class YTDLPManager(BaseManager):
             log("⚠️ Конфигурация загрузчика не установлена. Невозможно скачать видео.", indent=4)
             return None
 
-        if self._shutdown_event and self._shutdown_event.is_set():
-            raise asyncio.CancelledError()
+        self._check_shutdown()
 
         out_dir = self._downloader_config.output_path
         out_dir.mkdir(parents=True, exist_ok=True)
@@ -171,10 +170,7 @@ class YTDLPManager(BaseManager):
         base_delay = self._downloader_config.retries.delay_seconds
 
         for attempt in range(retries):
-            if self._shutdown_event and self._shutdown_event.is_set():
-                log("⏹️ Загрузка отменена пользователем.", indent=4)
-                raise asyncio.CancelledError()
-
+            self._check_shutdown()
             log(f"📥 Скачиваю видео (попытка {attempt + 1}/{retries})...", indent=4)
             out_q: Queue[Result] = Queue()
             proc = Process(target=_ytdlp_worker, args=(video_url, ydl_opts, out_q), daemon=True)

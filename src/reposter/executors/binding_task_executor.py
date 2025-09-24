@@ -9,6 +9,7 @@ from ..config.settings import Settings
 from ..core.post_processor import PostProcessor
 from ..core.state_manager import get_last_post_id, set_last_post_id
 from ..interfaces.task_executor import BaseTaskExecutor
+from ..managers.boosty_manager import BoostyManager
 from ..managers.telegram_manager import TelegramManager
 from ..managers.vk_user_manager import VKUserManager
 from ..managers.ytdlp_manager import YTDLPManager
@@ -33,7 +34,7 @@ async def save_new_posts_to_json(posts: list[VkPost], file_path: Path) -> None:
 
 class BindingTaskExecutor(BaseTaskExecutor):
     """
-    Implementation of business logic: processing VK → Telegram bindings.
+    Implementation of business logic: processing VK → Telegram/Boosty bindings.
     """
 
     def __init__(
@@ -42,12 +43,14 @@ class BindingTaskExecutor(BaseTaskExecutor):
         telegram_manager: TelegramManager,
         ytdlp_manager: YTDLPManager,
         post_processor: PostProcessor,
+        boosty_manager: BoostyManager | None = None,
         debug: bool = False,
     ):
         self.vk_manager = vk_manager
         self.telegram_manager = telegram_manager
         self.ytdlp_manager = ytdlp_manager
         self.post_processor = post_processor
+        self.boosty_manager = boosty_manager
         self.debug = debug
         self._shutdown_event: Event | None = None
 
@@ -63,9 +66,17 @@ class BindingTaskExecutor(BaseTaskExecutor):
                 log("⏹️  Остановка — прерываю обработку привязок.", indent=1)
                 break
 
+            target_descriptions: list[str] = []
+            if binding.telegram:
+                target_descriptions.append(f"Telegram: {binding.telegram.channel_ids}")
+            if binding.boosty:
+                target_descriptions.append(f"Boosty: {binding.boosty.blog_name}")
+
+            target_description = " и ".join(target_descriptions) if target_descriptions else "Unknown"
+
             log(
                 f"🔄 {datetime.now().strftime('%H:%M:%S %Y-%m-%d')} "
-                f"Обрабатываю привязку: {binding.vk.domain} → {binding.telegram.channel_ids}",
+                f"Обрабатываю привязку: {binding.vk.domain} → {target_description}",
                 padding_top=1,
             )
 
@@ -107,8 +118,17 @@ class BindingTaskExecutor(BaseTaskExecutor):
                             )
                             continue
 
-                        log(f"✈️ Публикую пост {post.id} в Telegram каналы...", indent=3, padding_top=1)
-                        await self.telegram_manager.post_to_channels(binding.telegram, [prepared_post])
+                        if binding.telegram:
+                            log(f"✈️ Публикую пост {post.id} в Telegram каналы...", indent=3, padding_top=1)
+                            await self.telegram_manager.post_to_channels(binding.telegram, [prepared_post])
+
+                        if binding.boosty and self.boosty_manager:
+                            log(
+                                f"🚀 Публикую пост {post.id} в Boosty блог {binding.boosty.blog_name}...",
+                                indent=3,
+                                padding_top=1,
+                            )
+                            await self.boosty_manager.create_post(binding.boosty, prepared_post)
 
                         await delete_files_async(prepared_post.attachments)
 

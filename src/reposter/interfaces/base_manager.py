@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from asyncio import Event
+from asyncio import CancelledError, Event
 from types import TracebackType
 
 from ..config.settings import Settings
@@ -11,10 +11,17 @@ class BaseManager(ABC):
     Any manager must implement these methods.
     """
 
-    @abstractmethod
+    def __init__(self) -> None:
+        self._shutdown_event: Event | None = None
+
     def set_shutdown_event(self, event: Event) -> None:
         """Called once on application startup to set the shutdown event."""
-        pass
+        self._shutdown_event = event
+
+    def _check_shutdown(self) -> None:
+        """Check if shutdown event is set and raise CancelledError if so."""
+        if self._shutdown_event and self._shutdown_event.is_set():
+            raise CancelledError("Shutdown requested")
 
     @abstractmethod
     async def setup(self, settings: Settings) -> None:

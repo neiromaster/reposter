@@ -38,9 +38,9 @@ class TelegramManager(BaseManager):
 
     def __init__(self) -> None:
         """Initialize the manager."""
+        super().__init__()
         self._initialized = False
         self._client: Client | None = None
-        self._shutdown_event: Event | None = None
         self._pbar: tqdm[Any] | None = None
         self._session_name: str = "user_session"
         self._api_id: int = 0
@@ -48,7 +48,7 @@ class TelegramManager(BaseManager):
 
     def set_shutdown_event(self, event: Event) -> None:
         """Sets the shutdown event from the AppManager."""
-        self._shutdown_event = event
+        super().set_shutdown_event(event)
 
     async def setup(self, settings: Settings) -> None:
         """Start the Telegram client session."""
@@ -336,8 +336,7 @@ class TelegramManager(BaseManager):
 
     def _create_progress_callback(self, indent: int) -> Callable[[int, int], None]:
         def _progress_hook(current: int, total: int) -> None:
-            if self._shutdown_event and self._shutdown_event.is_set():
-                raise asyncio.CancelledError()
+            self._check_shutdown()
 
             current_mb = current / (1024 * 1024)
             total_mb = total / (1024 * 1024) if total else 0
@@ -370,7 +369,6 @@ class TelegramManager(BaseManager):
         remaining = float(seconds)
         step = 0.25
         while remaining > 0:
-            if self._shutdown_event and self._shutdown_event.is_set():
-                raise asyncio.CancelledError()
+            self._check_shutdown()
             await asyncio.sleep(step)
             remaining -= step

@@ -25,14 +25,14 @@ from ..utils.log import log
 
 class VKManager(BaseManager):
     def __init__(self) -> None:
+        super().__init__()
         self._initialized: bool = False
         self._token: str = ""
         self._client: httpx.AsyncClient | None = None
-        self._shutdown_event: Event | None = None
 
     def set_shutdown_event(self, event: Event) -> None:
         """Sets the shutdown event from the AppManager."""
-        self._shutdown_event = event
+        super().set_shutdown_event(event)
 
     async def setup(self, settings: Settings) -> None:
         """Initializes the VK manager and the HTTP client."""
@@ -94,6 +94,7 @@ class VKManager(BaseManager):
         """Return True if the exception is retryable and shutdown is not requested."""
         if self._shutdown_event and self._shutdown_event.is_set():
             return False
+
         if not retry_state.outcome:
             return False
         exc = retry_state.outcome.exception()
@@ -136,8 +137,7 @@ class VKManager(BaseManager):
                     resp.raise_for_status()
                     async with await anyio.open_file(save_path, "wb") as f:
                         async for chunk in resp.aiter_bytes():
-                            if self._shutdown_event and self._shutdown_event.is_set():
-                                raise asyncio.CancelledError("Shutdown requested")
+                            self._check_shutdown()
                             await f.write(chunk)
                 log(f"✅ [VK] Файл сохранён: {save_path.name}", indent=5)
                 return save_path

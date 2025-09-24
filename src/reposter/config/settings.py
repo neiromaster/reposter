@@ -46,9 +46,20 @@ class TelegramConfig(BaseModel):
         return str_v
 
 
+class BoostyConfig(BaseModel):
+    blog_name: str = Field(..., min_length=1)
+
+
 class BindingConfig(BaseModel):
     vk: VKConfig
-    telegram: TelegramConfig
+    telegram: TelegramConfig | None = None
+    boosty: BoostyConfig | None = None
+
+    @model_validator(mode="after")
+    def check_at_least_one_target(self) -> BindingConfig:
+        if self.telegram is None and self.boosty is None:
+            raise ValueError("Должен быть указан хотя бы один таргет (telegram или boosty)")
+        return self
 
 
 class RetryConfig(BaseModel):

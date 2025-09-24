@@ -171,3 +171,13 @@ class TelegramPost(BaseModel):
     attachments: list[
         PreparedPhotoAttachment | PreparedVideoAttachment | PreparedAudioAttachment | PreparedDocumentAttachment
     ]
+
+
+# --- DTO for Boosty auth ---
+class BoostyAuthData(BaseModel):
+    """Model for Boosty authentication data."""
+
+    access_token: str
+    refresh_token: str
+    device_id: str
+    expires_at: int
