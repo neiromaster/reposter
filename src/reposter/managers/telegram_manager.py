@@ -250,7 +250,7 @@ class TelegramManager(BaseManager):
 
     def _assign_caption_to_group(
         self,
-        uploaded_items: list[InputMediaPhoto | InputMediaVideo | InputMediaAudio | InputMediaDocument],
+        uploaded_items: Sequence[InputMediaPhoto | InputMediaVideo | InputMediaAudio | InputMediaDocument],
         caption: str,
     ) -> None:
         """Assigns caption to the first appropriate media item in a group."""
@@ -276,7 +276,7 @@ class TelegramManager(BaseManager):
     async def _forward_media_to_channel(
         self,
         channel_id: int | str,
-        uploaded_items: list[InputMediaPhoto | InputMediaVideo | InputMediaAudio | InputMediaDocument],
+        uploaded_items: Sequence[InputMediaPhoto | InputMediaVideo | InputMediaAudio | InputMediaDocument],
         separate_text: str | None,
     ) -> None:
         """Forwards uploaded media to a specific channel, respecting group rules."""
