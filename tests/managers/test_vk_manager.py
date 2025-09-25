@@ -19,6 +19,7 @@ from src.reposter.models.dto import Post, VKAPIResponseDict
 def settings() -> Settings:
     mock_settings = MagicMock(spec=Settings)
     mock_settings.vk_service_token = "mock_token"
+    mock_settings.vk_user_token = "mock_user_token"
     return mock_settings
 
 
@@ -41,7 +42,7 @@ async def test_setup_initializes_client(vk_manager: VKManager, settings: Setting
 
     assert vk_manager._initialized  # type: ignore[reportPrivateUsage]
     assert vk_manager._client is not None  # type: ignore[reportPrivateUsage]
-    assert vk_manager._token == "mock_token"  # type: ignore[reportPrivateUsage]
+    assert vk_manager._service_token == "mock_token"  # type: ignore[reportPrivateUsage]
     assert not vk_manager._shutdown_event.is_set()  # type: ignore[reportPrivateUsage]
 
 
@@ -204,7 +205,7 @@ async def test_get_vk_wall_success(vk_manager: VKManager, settings: Settings):
         }
     }
 
-    respx.get("https://api.vk.com/method/wall.get").respond(json=cast(dict[str, object], mock_response))  # type: ignore
+    respx.get("https://api.vk.ru/method/wall.get").respond(json=cast(dict[str, object], mock_response))  # type: ignore
 
     posts = await vk_manager.get_vk_wall("example", 5, "wall")
 
@@ -219,7 +220,7 @@ async def test_get_vk_wall_with_dont_filter(vk_manager: VKManager, settings: Set
     await vk_manager.setup(settings)
 
     mock_response: VKAPIResponseDict = {"response": {"count": 0, "items": []}}
-    route = respx.get("https://api.vk.com/method/wall.get").respond(  # type: ignore
+    route = respx.get("https://api.vk.ru/method/wall.get").respond(  # type: ignore
         json=cast(dict[str, object], mock_response)
     )
 
@@ -238,7 +239,7 @@ async def test_get_vk_wall_api_error(vk_manager: VKManager, settings: Settings):
 
     error_response = {"error": {"error_code": 5, "error_msg": "Access denied"}}
 
-    respx.get("https://api.vk.com/method/wall.get").respond(json=error_response)  # type: ignore
+    respx.get("https://api.vk.ru/method/wall.get").respond(json=error_response)  # type: ignore
 
     with pytest.raises(tenacity.RetryError):
         await vk_manager.get_vk_wall("example", 5, "wall")
@@ -249,7 +250,7 @@ async def test_get_vk_wall_api_error(vk_manager: VKManager, settings: Settings):
 async def test_get_vk_wall_empty_response(vk_manager: VKManager, settings: Settings):
     await vk_manager.setup(settings)
 
-    respx.get("https://api.vk.com/method/wall.get").respond(json={})  # type: ignore
+    respx.get("https://api.vk.ru/method/wall.get").respond(json={})  # type: ignore
 
     with pytest.raises(ValueError, match="VK API response is empty or invalid"):
         await vk_manager.get_vk_wall("example", 5, "wall")

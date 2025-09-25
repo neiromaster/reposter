@@ -3,7 +3,7 @@ from ..interfaces.app_composer import AppComposer
 from ..interfaces.app_manager import BaseAppManager
 from ..managers.boosty_manager import BoostyManager
 from ..managers.telegram_manager import TelegramManager
-from ..managers.vk_user_manager import VKUserManager
+from ..managers.vk_manager import VKManager
 from ..managers.ytdlp_manager import YTDLPManager
 from .app_manager import AppManager
 from .post_processor import PostProcessor
@@ -12,7 +12,7 @@ from .post_processor import PostProcessor
 class DefaultAppComposer(AppComposer):
     def compose_app(self, debug: bool = False) -> BaseAppManager:
         ytdlp_manager = YTDLPManager()
-        vk_manager = VKUserManager()
+        vk_manager = VKManager()
         telegram_manager = TelegramManager()
         boosty_manager = BoostyManager()
 

@@ -27,7 +27,8 @@ class VKManager(BaseManager):
     def __init__(self) -> None:
         super().__init__()
         self._initialized: bool = False
-        self._token: str = ""
+        self._service_token: str = ""
+        self._user_token: str = ""
         self._client: httpx.AsyncClient | None = None
 
     def set_shutdown_event(self, event: Event) -> None:
@@ -35,13 +36,15 @@ class VKManager(BaseManager):
         super().set_shutdown_event(event)
 
     async def setup(self, settings: Settings) -> None:
-        """Initializes the VK manager and the HTTP client."""
+        """Initializes the VK user manager and the HTTP client."""
         if self._initialized:
-            log("🌐 [VK] Клиент уже запущен. Перезапуск...", indent=1)
+            log("🌐 [VK User] Клиент уже запущен. Перезапуск...", indent=1)
             await self.shutdown()
 
-        log("🌐 [VK] Запуск...", indent=1)
-        self._token = settings.vk_service_token
+        log("🌐 [VK User] Запуск...", indent=1)
+
+        self._user_token = settings.vk_user_token or ""
+        self._service_token = settings.vk_service_token
 
         self._client = httpx.AsyncClient(
             timeout=httpx.Timeout(10.0, connect=5.0),
@@ -50,7 +53,7 @@ class VKManager(BaseManager):
             follow_redirects=True,
         )
         self._initialized = True
-        log("🌐 [VK] Готов к работе.", indent=1)
+        log("🌐 [VK User] Готов к работе.", indent=1)
 
     async def update_config(self, settings: Settings) -> None:
         """Handles configuration updates."""
@@ -58,11 +61,11 @@ class VKManager(BaseManager):
             await self.setup(settings)
             return
 
-        if self._token == settings.vk_service_token:
-            log("🌐 [VK] Конфигурация обновлена, без изменений.", indent=1)
+        if self._user_token == settings.vk_user_token and self._service_token == settings.vk_service_token:
+            log("🌐 [VK User] Конфигурация обновлена, без изменений.", indent=1)
             return
 
-        log("🌐 [VK] Конфигурация изменилась, перезапуск...", indent=1)
+        log("🌐 [VK User] Конфигурация изменилась, перезапуск...", indent=1)
         await self.shutdown()
         await self.setup(settings)
 
@@ -70,11 +73,11 @@ class VKManager(BaseManager):
         """Initiates shutdown and closes the client."""
         if not self._initialized:
             return
-        log("🌐 [VK] Завершение работы...", indent=1)
+        log("🌐 [VK User] Завершение работы...", indent=1)
         if self._client and not self._client.is_closed:
             await self._client.aclose()
         self._initialized = False
-        log("🌐 [VK] Остановлен.", indent=1)
+        log("🌐 [VK User] Остановлен.", indent=1)
 
     async def __aenter__(self) -> VKManager:
         """Enter the async context manager."""
@@ -107,7 +110,7 @@ class VKManager(BaseManager):
         """Log before sleeping."""
         if retry_state.outcome and retry_state.next_action:
             log(
-                f"❌ [VK] Ошибка: {retry_state.outcome.exception()}. "
+                f"❌ [VK User] Ошибка: {retry_state.outcome.exception()}. "
                 f"Повтор через {retry_state.next_action.sleep:.2f} c...",
                 indent=1,
             )
@@ -126,7 +129,7 @@ class VKManager(BaseManager):
             if self._client is None:
                 raise RuntimeError("Client not initialized. Call setup() first.")
             if not url.path or url.path == "/":
-                log(f"⚠️ [VK] URL не содержит пути для сохранения: {url}", indent=1)
+                log(f"⚠️ [VK User] URL не содержит пути для сохранения: {url}", indent=1)
                 return None
 
             save_path = download_path / Path(url.path).name
@@ -139,13 +142,13 @@ class VKManager(BaseManager):
                         async for chunk in resp.aiter_bytes():
                             self._check_shutdown()
                             await f.write(chunk)
-                log(f"✅ [VK] Файл сохранён: {save_path.name}", indent=5)
+                log(f"✅ [VK User] Файл сохранён: {save_path.name}", indent=5)
                 return save_path
 
             except asyncio.CancelledError:
                 if save_path.exists():
                     save_path.unlink()
-                log("⏹️ [VK] Загрузка файла прервана.", indent=1)
+                log("⏹️ [VK User] Загрузка файла прервана.", indent=1)
                 raise
 
             except Exception:
@@ -169,7 +172,7 @@ class VKManager(BaseManager):
             if self._client is None:
                 raise RuntimeError("Client not initialized. Call setup() first.")
 
-            resp = await self._client.get("https://api.vk.com/method/wall.get", params=params)
+            resp = await self._client.get("https://api.vk.ru/method/wall.get", params=params)
             resp.raise_for_status()
             data: VKAPIResponseDict = resp.json()
 
@@ -181,22 +184,25 @@ class VKManager(BaseManager):
                 raise ValueError("VK API response is empty or invalid.")
 
             posts = WallGetResponse.model_validate(response_data).items
-            # for post in posts:
-            #     if post.text:
-            #         post.text = normalize_links(post.text)
             return posts
+
+        token = self._service_token
+        if post_source == "donut":
+            if not self._user_token:
+                raise ValueError("User token is required for donut posts.")
+            token = self._user_token
+            log(f"🔍 [VK User] Собираю посты из VK Donut: {domain}...", indent=1)
+        else:
+            log(f"🔍 [VK User] Собираю посты со стены: {domain}...", indent=1)
 
         params: dict[str, Any] = {
             "domain": domain,
             "count": post_count,
-            "access_token": self._token,
+            "access_token": token,
             "v": "5.199",
         }
 
         if post_source == "donut":
             params["filter"] = "donut"
-            log(f"🔍 [VK] Собираю посты из VK Donut: {domain}...", indent=1)
-        else:
-            log(f"🔍 [VK] Собираю посты со стены: {domain}...", indent=1)
 
         return await _get_wall(params)

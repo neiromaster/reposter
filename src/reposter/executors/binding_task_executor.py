@@ -11,7 +11,7 @@ from ..core.state_manager import get_last_post_id, set_last_post_id
 from ..interfaces.task_executor import BaseTaskExecutor
 from ..managers.boosty_manager import BoostyManager
 from ..managers.telegram_manager import TelegramManager
-from ..managers.vk_user_manager import VKUserManager
+from ..managers.vk_manager import VKManager
 from ..managers.ytdlp_manager import YTDLPManager
 from ..models.dto import Post as VkPost
 from ..utils.cleaner import delete_files_async
@@ -39,7 +39,7 @@ class BindingTaskExecutor(BaseTaskExecutor):
 
     def __init__(
         self,
-        vk_manager: VKUserManager,
+        vk_manager: VKManager,
         telegram_manager: TelegramManager,
         ytdlp_manager: YTDLPManager,
         post_processor: PostProcessor,
