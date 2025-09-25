@@ -168,7 +168,7 @@ class VKManager(BaseManager):
             before_sleep=self._before_sleep,
             retry_error_cls=RetryError,
         )
-        async def _get_wall(params: dict[str, Any]) -> list[Post]:
+        async def _get_wall_posts(params: dict[str, Any]) -> list[Post]:
             if self._client is None:
                 raise RuntimeError("Client not initialized. Call setup() first.")
 
@@ -186,23 +186,44 @@ class VKManager(BaseManager):
             posts = WallGetResponse.model_validate(response_data).items
             return posts
 
-        token = self._service_token
         if post_source == "donut":
             if not self._user_token:
                 raise ValueError("User token is required for donut posts.")
-            token = self._user_token
+
             log(f"🔍 [VK User] Собираю посты из VK Donut: {domain}...", indent=1)
+            params = {
+                "domain": domain,
+                "count": post_count,
+                "access_token": self._user_token,
+                "v": "5.199",
+                "filter": "donut",
+            }
+            return await _get_wall_posts(params)
+
+        # post_source == "wall"
+        if self._user_token:
+            log(f"🔍 [VK User] Собираю посты со стены (с фильтрацией Donut): {domain}...", indent=1)
+            base_params = {
+                "domain": domain,
+                "count": post_count,
+                "access_token": self._user_token,
+                "v": "5.199",
+            }
+
+            all_posts = await _get_wall_posts({**base_params, "filter": "all"})
+
+            donut_posts = await _get_wall_posts({**base_params, "filter": "donut"})
+
+            donut_ids = {p.id for p in donut_posts}
+
+            return [post for post in all_posts if post.id not in donut_ids]
         else:
+            # service token only
             log(f"🔍 [VK User] Собираю посты со стены: {domain}...", indent=1)
-
-        params: dict[str, Any] = {
-            "domain": domain,
-            "count": post_count,
-            "access_token": token,
-            "v": "5.199",
-        }
-
-        if post_source == "donut":
-            params["filter"] = "donut"
-
-        return await _get_wall(params)
+            params = {
+                "domain": domain,
+                "count": post_count,
+                "access_token": self._service_token,
+                "v": "5.199",
+            }
+            return await _get_wall_posts(params)
