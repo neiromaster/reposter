@@ -18,6 +18,7 @@ from tenacity import (
 )
 
 from ..config.settings import Settings
+from ..exceptions import VKApiError
 from ..interfaces.base_manager import BaseManager
 from ..models.dto import Post, VKAPIResponseDict, WallGetResponse
 from ..utils.log import log
@@ -101,6 +102,10 @@ class VKManager(BaseManager):
         if not retry_state.outcome:
             return False
         exc = retry_state.outcome.exception()
+
+        if isinstance(exc, VKApiError):
+            return False
+
         if isinstance(exc, asyncio.CancelledError):
             return False
         return isinstance(exc, (httpx.RequestError | httpx.HTTPStatusError | RuntimeError))
@@ -177,7 +182,7 @@ class VKManager(BaseManager):
             data: VKAPIResponseDict = resp.json()
 
             if "error" in data:
-                raise RuntimeError(f"VK API Error: {data['error']['error_msg']}")
+                raise VKApiError(f"VK API Error: {data['error']['error_msg']}")
 
             response_data = data.get("response")
             if not response_data:
@@ -212,11 +217,20 @@ class VKManager(BaseManager):
 
             all_posts = await _get_wall_posts({**base_params, "filter": "all"})
 
-            donut_posts = await _get_wall_posts({**base_params, "filter": "donut"})
-
-            donut_ids = {p.id for p in donut_posts}
-
-            return [post for post in all_posts if post.id not in donut_ids]
+            try:
+                donut_posts = await _get_wall_posts({**base_params, "filter": "donut"})
+                donut_ids = {p.id for p in donut_posts}
+                return [post for post in all_posts if post.id not in donut_ids]
+            except VKApiError as e:
+                if "no access to donuts" in str(e):
+                    log(
+                        "⚠️ [VK User] Нет доступа к донатным постам, невозможно отфильтровать. "
+                        "Возвращаются все посты со стены.",
+                        indent=1,
+                    )
+                    return all_posts
+                else:
+                    raise
         else:
             # service token only
             log(f"🔍 [VK User] Собираю посты со стены: {domain}...", indent=1)

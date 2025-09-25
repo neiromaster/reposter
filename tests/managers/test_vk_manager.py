@@ -11,6 +11,7 @@ import tenacity
 from pydantic import HttpUrl
 
 from src.reposter.config.settings import Settings
+from src.reposter.exceptions import VKApiError
 from src.reposter.managers.vk_manager import VKManager
 from src.reposter.models.dto import Post, VKAPIResponseDict
 
@@ -250,7 +251,7 @@ async def test_get_vk_wall_api_error(vk_manager: VKManager, settings: Settings):
 
     respx.get("https://api.vk.ru/method/wall.get").respond(json=error_response)  # type: ignore
 
-    with pytest.raises(tenacity.RetryError):
+    with pytest.raises(VKApiError, match="Access denied"):
         await vk_manager.get_vk_wall("example", 5, "wall")
 
 
@@ -442,3 +443,55 @@ async def test_download_file_generic_exception(vk_manager: VKManager, settings: 
 
     # Ensure no partial file remains
     assert not (tmp_path / "test.jpg").exists()
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_vk_wall_fallback_on_donut_access_error(vk_manager: VKManager, settings: Settings):
+    """
+    Tests that the manager falls back to returning all posts if there's an access error
+    when trying to fetch donut-only posts.
+    """
+    await vk_manager.setup(settings)
+
+    mock_response_all: VKAPIResponseDict = {
+        "response": {
+            "count": 2,
+            "items": [
+                {
+                    "id": 123,
+                    "owner_id": -12345,
+                    "from_id": -12345,
+                    "text": "Regular Post",
+                    "date": 1700000000,
+                    "attachments": [],
+                },
+                {
+                    "id": 456,
+                    "owner_id": -12345,
+                    "from_id": -12345,
+                    "text": "Donut Post",
+                    "date": 1700000001,
+                    "attachments": [],
+                },
+            ],
+        }
+    }
+    mock_error_donut = {"error": {"error_code": 100, "error_msg": "Access denied: no access to donuts."}}
+
+    def side_effect(request: httpx.Request):
+        if request.url.params.get("filter") == "donut":
+            # This response will be caught by _get_wall_posts and raised as a VKApiError
+            return httpx.Response(json=mock_error_donut, status_code=200)
+        if request.url.params.get("filter") == "all":
+            return httpx.Response(json=cast(dict[str, object], mock_response_all), status_code=200)
+        return httpx.Response(status_code=404)
+
+    respx.get("https://api.vk.ru/method/wall.get").mock(side_effect=side_effect)
+
+    posts = await vk_manager.get_vk_wall("example", 5, "wall")
+
+    # Expect both posts because filtering was skipped
+    assert len(posts) == 2
+    assert posts[0].id == 123
+    assert posts[1].id == 456
