@@ -50,6 +50,7 @@ dev = [
     "vk-api-stubs>=1.0.0",
     "pytest-asyncio>=1.2.0",
     "respx>=0.22.0",
+    "pytest-cov>=7.0.0",
 ]
 
 [tool.pytest.ini_options]

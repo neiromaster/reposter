@@ -189,7 +189,7 @@ async def test_download_file_interrupted(vk_manager: VKManager, settings: Settin
 async def test_get_vk_wall_success(vk_manager: VKManager, settings: Settings):
     await vk_manager.setup(settings)
 
-    mock_response: VKAPIResponseDict = {
+    mock_response_all: VKAPIResponseDict = {
         "response": {
             "count": 1,
             "items": [
@@ -204,8 +204,17 @@ async def test_get_vk_wall_success(vk_manager: VKManager, settings: Settings):
             ],
         }
     }
+    mock_response_donut: VKAPIResponseDict = {"response": {"count": 0, "items": []}}
 
-    respx.get("https://api.vk.ru/method/wall.get").respond(json=cast(dict[str, object], mock_response))  # type: ignore
+    def side_effect(request: httpx.Request):
+        if request.url.params.get("filter") == "donut":
+            return httpx.Response(json=cast(dict[str, object], mock_response_donut), status_code=200)
+        if request.url.params.get("filter") == "all":
+            return httpx.Response(json=cast(dict[str, object], mock_response_all), status_code=200)
+        # Fallback for the case where filter is not present (service token)
+        return httpx.Response(json=cast(dict[str, object], mock_response_all), status_code=200)
+
+    respx.get("https://api.vk.ru/method/wall.get").mock(side_effect=side_effect)
 
     posts = await vk_manager.get_vk_wall("example", 5, "wall")
 
@@ -291,6 +300,119 @@ async def test_download_file_http_error_triggers_retry(vk_manager: VKManager, se
 
 
 @pytest.mark.asyncio
+async def test_get_vk_wall_donut_no_user_token(vk_manager: VKManager, settings: Settings):
+    """
+    Tests that a ValueError is raised when trying to fetch donut posts without a user token.
+    """
+    # Remove user token
+    settings.vk_user_token = None
+    await vk_manager.setup(settings)
+
+    with pytest.raises(ValueError, match="User token is required for donut posts."):
+        await vk_manager.get_vk_wall("example", 5, "donut")
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_vk_wall_no_user_token(vk_manager: VKManager, settings: Settings):
+    """
+    Tests that wall posts are fetched using the service token when a user token is not available.
+    """
+    # Remove user token
+    settings.vk_user_token = None
+    await vk_manager.setup(settings)
+
+    mock_response: VKAPIResponseDict = {
+        "response": {
+            "count": 1,
+            "items": [
+                {
+                    "id": 123,
+                    "owner_id": -12345,
+                    "from_id": -12345,
+                    "text": "Hello world",
+                    "date": 1700000000,
+                    "attachments": [],
+                }
+            ],
+        }
+    }
+
+    route = respx.get("https://api.vk.ru/method/wall.get").respond(json=cast(dict[str, object], mock_response))  # type: ignore[reportUnknownMemberType]
+
+    posts = await vk_manager.get_vk_wall("example", 5, "wall")
+
+    assert len(posts) == 1
+    request = route.calls[0].request  # type: ignore[reportUnknownVariableType, reportUnknownMemberType]
+    assert "access_token" in request.url.params  # type: ignore[reportUnknownMemberType]
+    assert request.url.params["access_token"] == "mock_token"  # type: ignore[reportUnknownMemberType]  # service token
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_vk_wall_with_user_token_and_mixed_posts(vk_manager: VKManager, settings: Settings):
+    """
+    Tests that wall posts are correctly filtered when fetched with a user token
+    and there's a mix of regular and donut posts.
+    """
+    await vk_manager.setup(settings)
+
+    mock_response_all: VKAPIResponseDict = {
+        "response": {
+            "count": 2,
+            "items": [
+                {
+                    "id": 123,
+                    "owner_id": -12345,
+                    "from_id": -12345,
+                    "text": "Regular Post",
+                    "date": 1700000000,
+                    "attachments": [],
+                },
+                {
+                    "id": 456,
+                    "owner_id": -12345,
+                    "from_id": -12345,
+                    "text": "Donut Post",
+                    "date": 1700000001,
+                    "attachments": [],
+                },
+            ],
+        }
+    }
+    mock_response_donut: VKAPIResponseDict = {
+        "response": {
+            "count": 1,
+            "items": [
+                {
+                    "id": 456,
+                    "owner_id": -12345,
+                    "from_id": -12345,
+                    "text": "Donut Post",
+                    "date": 1700000001,
+                    "attachments": [],
+                },
+            ],
+        }
+    }
+
+    def side_effect(request: httpx.Request):
+        if request.url.params.get("filter") == "donut":
+            return httpx.Response(json=cast(dict[str, object], mock_response_donut), status_code=200)
+        if request.url.params.get("filter") == "all":
+            return httpx.Response(json=cast(dict[str, object], mock_response_all), status_code=200)
+        return httpx.Response(status_code=404)
+
+    respx.get("https://api.vk.ru/method/wall.get").mock(side_effect=side_effect)
+
+    posts = await vk_manager.get_vk_wall("example", 5, "wall")
+
+    assert len(posts) == 1
+    assert posts[0].id == 123
+    assert posts[0].text == "Regular Post"
+
+
+@pytest.mark.asyncio
 async def test_async_with_support(settings: Settings):
     manager = VKManager()
     with patch.object(manager, "shutdown", new_callable=AsyncMock) as mock_shutdown:
@@ -299,3 +421,24 @@ async def test_async_with_support(settings: Settings):
             assert mgr is manager
             assert mgr._initialized  # type: ignore[reportPrivateUsage]
         mock_shutdown.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_download_file_generic_exception(vk_manager: VKManager, settings: Settings, tmp_path: Path):
+    await vk_manager.setup(settings)
+
+    url = HttpUrl("https://example.com/test.jpg")
+
+    # Simulate a generic exception during download
+    async def _streaming_side_effect(*args: object, **kwargs: object):
+        raise RuntimeError("Simulated generic error")
+
+    route = respx.get(str(url))
+    route.mock(side_effect=_streaming_side_effect)
+
+    with pytest.raises(tenacity.RetryError):
+        await vk_manager.download_file(url, tmp_path)
+
+    # Ensure no partial file remains
+    assert not (tmp_path / "test.jpg").exists()
