@@ -1,5 +1,4 @@
 # type: ignore[reportPrivateUsage]
-# tests/core/test_app_manager.py
 import asyncio
 import signal
 from typing import Any
