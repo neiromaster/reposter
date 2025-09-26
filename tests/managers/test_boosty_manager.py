@@ -1,4 +1,4 @@
-# pyright: reportPrivateUsage=false, reportUnusedImport=false
+# pyright: reportPrivateUsage=false
 import asyncio
 import json
 import tempfile
