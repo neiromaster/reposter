@@ -1,39 +1,114 @@
+from pathlib import Path
+from unittest.mock import patch
+
 import pytest
 
-from src.reposter.utils.text_utils import normalize_links
-
-# Atomic test cases to isolate functionality
-TEST_CASES = [
-    # 1. Test just an emoji
-    ("emoji_only", "Hello 👍 World", "Hello 👍\u200b World"),
-    # 2. Test just a junk link
-    ("junk_link", "Link: [vk.com/junk|http://real.com/page]", "Link: real.com/page"),
-    # 3. Test just a club link
-    ("club_link", "Group: [club123|My Club]", "Group: [My Club](vk.com/club123)"),
-    # 4. Test just an ID link
-    ("id_link", "User: [id456|My Name]", "User: [My Name](vk.com/id456)"),
-    # 5. Test a valid URL link
-    ("url_link", "Site: [https://example.com|My Site]", "Site: [My Site](example.com)"),
-    # 6. Test a broken URL link
-    ("broken_url_link", "Broken: [httpd://broken|Do not show link]", "Broken: Do not show link"),
-    # 7. Test stripping protocol from a raw link
-    ("protocol_strip", "Raw link: https://raw.link/path", "Raw link: raw.link/path"),
-    # 8. Test emoji and a simple link
-    ("emoji_and_link", "Pointer 👉[club123|My Club]", "Pointer 👉\u200b[My Club](vk.com/club123)"),
-    # 9. Flag as a single emoji
-    ("flag_emoji", "Country: 🇷🇺Russia", "Country: 🇷🇺\u200bRussia"),
-    # 10. Family Emoji Combination
-    ("family_emoji", "Family: 👩‍👩‍👧‍👦Happy", "Family: 👩‍👩‍👧‍👦\u200bHappy"),
-    # 11. Real broken link
-    (
-        "real_broken_link",
-        "👉[vk.comhttps://vk.com/@donut-android|http://vk.com/donut/dublikkk]",
-        "👉\u200bvk.com/donut/dublikkk",
-    ),
-]
+from src.reposter.models.dto import PreparedAttachment, PreparedVideoAttachment
+from src.reposter.utils.cleaner import delete_files_async
 
 
-@pytest.mark.parametrize("test_id, input_text, expected_text", TEST_CASES)
-def test_atomic_cases(test_id: str, input_text: str, expected_text: str) -> None:
-    result = normalize_links(input_text)
-    assert result == expected_text
+class TestCleaner:
+    @pytest.mark.asyncio
+    async def test_delete_files_async_single_file_exists(self, tmp_path: Path):
+        """Test deleting a single file that exists."""
+        # Create a temporary file
+        test_file = tmp_path / "test_file.txt"
+        test_file.write_text("test content")
+
+        # Create a PreparedAttachment
+        attachment = PreparedAttachment(file_path=test_file, filename="test_file.txt")
+
+        # Call the function
+        await delete_files_async([attachment])
+
+        # Verify the file was deleted
+        assert not test_file.exists()
+
+    @pytest.mark.asyncio
+    async def test_delete_files_async_single_file_not_exists(self):
+        """Test deleting a single file that does not exist."""
+        # When a file doesn't exist, it should not try to delete it and not log anything
+        fake_file = Path("non_existent_file.txt")
+        attachment = PreparedAttachment(file_path=fake_file, filename="non_existent_file.txt")
+
+        # Mock the log function to capture the call
+        with patch("src.reposter.utils.cleaner.log") as mock_log:
+            # Call the function
+            await delete_files_async([attachment])
+
+            # Since the file doesn't exist, no log message should be made
+            mock_log.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_delete_files_async_with_exception(self, tmp_path: Path):
+        """Test deleting files when an exception occurs."""
+        with patch("src.reposter.utils.cleaner.Path.unlink", side_effect=Exception("Permission denied")):
+            test_file = tmp_path / "test_file.txt"
+            test_file.write_text("test content")
+
+            attachment = PreparedAttachment(file_path=test_file, filename="test_file.txt")
+
+            # Call the function
+            await delete_files_async([attachment])
+
+            # The file should still exist since the deletion failed
+            assert test_file.exists()
+
+    @pytest.mark.asyncio
+    async def test_delete_files_async_multiple_files(self, tmp_path: Path):
+        """Test deleting multiple files."""
+        # Create temporary files
+        file1 = tmp_path / "file1.txt"
+        file2 = tmp_path / "file2.txt"
+        file1.write_text("content 1")
+        file2.write_text("content 2")
+
+        # Create PreparedAttachments
+        attachment1 = PreparedAttachment(file_path=file1, filename="file1.txt")
+        attachment2 = PreparedAttachment(file_path=file2, filename="file2.txt")
+
+        # Call the function
+        await delete_files_async([attachment1, attachment2])
+
+        # Verify both files were deleted
+        assert not file1.exists()
+        assert not file2.exists()
+
+    @pytest.mark.asyncio
+    async def test_delete_video_attachments_with_thumbnails(self, tmp_path: Path):
+        """Test deleting video attachments with thumbnails."""
+        # Create temporary files
+        video_file = tmp_path / "video.mp4"
+        thumbnail_file = tmp_path / "thumbnail.jpg"
+        video_file.write_text("video content")
+        thumbnail_file.write_text("thumbnail content")
+
+        # Create a PreparedVideoAttachment with thumbnail
+        attachment = PreparedVideoAttachment(
+            file_path=video_file, filename="video.mp4", width=1920, height=1080, thumbnail_path=thumbnail_file
+        )
+
+        # Call the function
+        await delete_files_async([attachment])
+
+        # Verify both files were deleted
+        assert not video_file.exists()
+        assert not thumbnail_file.exists()
+
+    @pytest.mark.asyncio
+    async def test_delete_video_attachments_without_thumbnails(self, tmp_path: Path):
+        """Test deleting video attachments without thumbnails."""
+        # Create temporary video file
+        video_file = tmp_path / "video.mp4"
+        video_file.write_text("video content")
+
+        # Create a PreparedVideoAttachment without thumbnail
+        attachment = PreparedVideoAttachment(
+            file_path=video_file, filename="video.mp4", width=1920, height=1080, thumbnail_path=None
+        )
+
+        # Call the function
+        await delete_files_async([attachment])
+
+        # Verify the video file was deleted
+        assert not video_file.exists()
