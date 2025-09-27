@@ -138,7 +138,7 @@ async def test_authorize_success(boosty_manager: BoostyManager):
         assert boosty_manager._access_token == "test_token"
         assert boosty_manager._device_id == "test_device_id"
         assert boosty_manager._blog_name == blog_name
-        mock_log.assert_called_with("Авторизация успешна!", indent=4)
+        mock_log.assert_called_with("🔑 Авторизация успешна!", indent=4)
 
     # Clean up
     Path(temp_auth_path).unlink()

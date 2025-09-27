@@ -52,7 +52,7 @@ class TelegramManager(BaseManager):
 
     async def setup(self, settings: Settings) -> None:
         """Start the Telegram client session."""
-        log("✈️ [Telegram] Запуск...", indent=1)
+        log("✈️ [TG] Запуск...", indent=1)
         self._session_name = settings.app.session_name
         self._api_id = settings.telegram_api_id
         self._api_hash = settings.telegram_api_hash
@@ -65,14 +65,14 @@ class TelegramManager(BaseManager):
             )
             await self._client.start()
             self._initialized = True
-            log("✈️ [Telegram] Готов к работе.", indent=1)
+            log("✈️ [TG] Готов к работе.", indent=1)
         except asyncio.CancelledError:
-            log("✈️ [Telegram] Запуск прерван пользователем.", indent=1)
+            log("✈️ [TG] Запуск прерван пользователем.", indent=1)
             self._initialized = False
             raise
         except Exception:
             self._initialized = False
-            log("✈️ [Telegram] Ошибка запуска.", indent=1)
+            log("✈️ [TG] Ошибка запуска.", indent=1)
             raise
 
     async def update_config(self, settings: Settings) -> None:
@@ -86,7 +86,7 @@ class TelegramManager(BaseManager):
             or self._api_hash != settings.telegram_api_hash
             or self._session_name != settings.app.session_name
         ):
-            log("✈️ [Telegram] Конфигурация изменилась, перезапуск...", indent=1)
+            log("✈️ [TG] Конфигурация изменилась, перезапуск...", indent=1)
             await self.shutdown()
             await self.setup(settings)
 
@@ -94,11 +94,11 @@ class TelegramManager(BaseManager):
         """Stop the Telegram client session."""
         if not self._initialized:
             return
-        log("✈️ [Telegram] Завершение работы...", indent=1)
+        log("✈️ [TG] Завершение работы...", indent=1)
         if self._client and self._client.is_connected:
             await self._client.stop()
         self._initialized = False
-        log("✈️ [Telegram] Остановлен.", indent=1)
+        log("✈️ [TG] Остановлен.", indent=1)
 
     async def __aenter__(self) -> TelegramManager:
         """Enter the async context manager."""
