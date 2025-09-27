@@ -57,7 +57,7 @@ class BoostyManager(BaseManager):
 
     async def _authorize(self, blog_name: str) -> None:
         """Authorize using auth.json file for specific blog."""
-        log(f"Авторизация в Boosty для блога {blog_name}...", indent=4)
+        log(f"🔑 Авторизация в Boosty для блога {blog_name}...", indent=4)
 
         if not os.path.exists(self._auth_path):
             raise FileNotFoundError(f"Файл авторизации не найден: {self._auth_path}")
@@ -82,7 +82,7 @@ class BoostyManager(BaseManager):
                     "x-app": "web",
                 }
             )
-        log("Авторизация успешна!", indent=4)
+        log("🔑 Авторизация успешна!", indent=4)
 
     async def update_config(self, settings: Settings) -> None:
         """Handles configuration updates."""
