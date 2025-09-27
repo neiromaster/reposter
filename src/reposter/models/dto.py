@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from pathlib import Path
 from typing import Any, Literal, NotRequired, TypedDict
 
@@ -164,6 +166,21 @@ class PreparedDocumentAttachment(PreparedAttachment):
     pass
 
 
+class DownloadedArtifact(BaseModel):
+    type: Literal["photo", "video", "audio", "doc"]
+    original_attachment: Photo | Video | Audio | Doc
+    file_path: Path
+    # video specific
+    width: int | None = None
+    height: int | None = None
+    thumbnail_path: Path | None = None
+    # audio specific
+    artist: str | None = None
+    title: str | None = None
+    # doc specific
+    filename: str | None = None
+
+
 class TelegramPost(BaseModel):
     """A post that is fully prepared for sending."""
 
@@ -172,6 +189,7 @@ class TelegramPost(BaseModel):
         PreparedPhotoAttachment | PreparedVideoAttachment | PreparedAudioAttachment | PreparedDocumentAttachment
     ]
     tags: list[str] = Field(default_factory=list)
+    downloaded_artifacts: list[DownloadedArtifact] = Field(default_factory=list[DownloadedArtifact], exclude=True)
 
 
 # --- DTO for Boosty auth ---

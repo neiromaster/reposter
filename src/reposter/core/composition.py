@@ -8,6 +8,7 @@ from ..managers.ytdlp_manager import YTDLPManager
 from ..processing.post_processor import PostProcessor
 from ..processing.steps import (
     AttachmentDownloaderStep,
+    AttachmentDtoCreationStep,
     LinkNormalizationStep,
     TagExtractionStep,
 )
@@ -28,6 +29,7 @@ class DefaultAppComposer(AppComposer):
                 vk_manager=vk_manager,
                 ytdlp_manager=ytdlp_manager,
             ),
+            AttachmentDtoCreationStep(),
         ]
 
         post_processor = PostProcessor(steps=processing_steps)

@@ -16,17 +16,18 @@ from ..models.dto import (
     Doc as VkDoc,
 )
 from ..models.dto import (
-    Photo as VkPhoto,
-)
-from ..models.dto import (
-    Post as VkPost,
-)
-from ..models.dto import (
+    DownloadedArtifact,
     PreparedAudioAttachment,
     PreparedDocumentAttachment,
     PreparedPhotoAttachment,
     PreparedVideoAttachment,
     TelegramPost,
+)
+from ..models.dto import (
+    Photo as VkPhoto,
+)
+from ..models.dto import (
+    Post as VkPost,
 )
 from ..models.dto import (
     Video as VkVideo,
@@ -61,29 +62,29 @@ class AttachmentDownloaderStep(ProcessingStep):
 
     async def process(self, post: VkPost, prepared_post: TelegramPost) -> None:
         for attachment in post.attachments:
-            prepared_attachment = None
+            downloaded_artifact = None
             match attachment.type:
                 case "video":
                     if attachment.video:
-                        prepared_attachment = await self._process_video(attachment.video)
+                        downloaded_artifact = await self._download_video(attachment.video)
                 case "photo":
                     if attachment.photo:
-                        prepared_attachment = await self._process_photo(attachment.photo)
+                        downloaded_artifact = await self._download_photo(attachment.photo)
                 case "audio":
                     if attachment.audio:
-                        prepared_attachment = await self._process_audio(attachment.audio)
+                        downloaded_artifact = await self._download_audio(attachment.audio)
                 case "doc":
                     if attachment.doc:
-                        prepared_attachment = await self._process_doc(attachment.doc)
+                        downloaded_artifact = await self._download_doc(attachment.doc)
                 case "poll" | "link" | "graffiti" | "donut_link":
                     log(f"🚫 Пропускаю неподдерживаемое вложение типа: {attachment.type}", indent=4)
                 case _:
                     log(f"❓ Неизвестный тип вложения: {attachment.type}", indent=4)
 
-            if prepared_attachment:
-                prepared_post.attachments.append(prepared_attachment)
+            if downloaded_artifact:
+                prepared_post.downloaded_artifacts.append(downloaded_artifact)
 
-    async def _process_video(self, video: VkVideo) -> PreparedVideoAttachment:
+    async def _download_video(self, video: VkVideo) -> DownloadedArtifact:
         log("🎬 Обрабатываю видео...", indent=4)
         video_path = await self.ytdlp.download_video(video.url)
         if not video_path:
@@ -106,11 +107,10 @@ class AttachmentDownloaderStep(ProcessingStep):
         except Exception as e:
             raise PostProcessingError(f"❌ Не удалось получить метаданные видео: {e}") from e
 
-        filename = (video.title or f"{video.owner_id}_{video.id}") + video_path.suffix
-
-        return PreparedVideoAttachment(
+        return DownloadedArtifact(
+            type="video",
+            original_attachment=video,
             file_path=video_path,
-            filename=filename,
             width=width,
             height=height,
             thumbnail_path=thumb_path,
@@ -148,20 +148,19 @@ class AttachmentDownloaderStep(ProcessingStep):
 
         return sorted(candidates, key=sort_key)[0]
 
-    async def _process_photo(self, photo: VkPhoto) -> PreparedPhotoAttachment:
+    async def _download_photo(self, photo: VkPhoto) -> DownloadedArtifact:
         log("📸 Обрабатываю фото...", indent=4)
         photo_path = await self.vk.download_file(photo.max_size_url, Path("downloads/photos"))
         if not photo_path:
             raise PostProcessingError("❌ Не удалось скачать фото.")
 
-        filename = photo_path.stem + photo_path.suffix
-
-        return PreparedPhotoAttachment(
+        return DownloadedArtifact(
+            type="photo",
+            original_attachment=photo,
             file_path=photo_path,
-            filename=filename,
         )
 
-    async def _process_audio(self, audio: VkAudio) -> PreparedAudioAttachment:
+    async def _download_audio(self, audio: VkAudio) -> DownloadedArtifact:
         log("🎵 Обрабатываю аудио...", indent=4)
 
         download_dir = Path("downloads/audio")
@@ -170,16 +169,15 @@ class AttachmentDownloaderStep(ProcessingStep):
         if not audio_path:
             raise PostProcessingError("❌ Не удалось скачать аудио.")
 
-        filename = f"{audio.artist} - {audio.title}" + audio_path.suffix
-
-        return PreparedAudioAttachment(
+        return DownloadedArtifact(
+            type="audio",
+            original_attachment=audio,
             file_path=audio_path,
-            filename=filename,
             artist=audio.artist,
             title=audio.title,
         )
 
-    async def _process_doc(self, doc: VkDoc) -> PreparedDocumentAttachment:
+    async def _download_doc(self, doc: VkDoc) -> DownloadedArtifact:
         log("📄 Обрабатываю документ...", indent=4)
 
         download_dir = Path("downloads/docs")
@@ -188,9 +186,62 @@ class AttachmentDownloaderStep(ProcessingStep):
         if not doc_path:
             raise PostProcessingError("❌ Не удалось скачать документ.")
 
-        filename = doc.title + doc_path.suffix
-
-        return PreparedDocumentAttachment(
+        return DownloadedArtifact(
+            type="doc",
+            original_attachment=doc,
             file_path=doc_path,
-            filename=filename,
+            filename=doc.title,
         )
+
+
+class AttachmentDtoCreationStep(ProcessingStep):
+    async def process(self, post: VkPost, prepared_post: TelegramPost) -> None:
+        for artifact in prepared_post.downloaded_artifacts:
+            prepared_attachment = None
+            match artifact.type:
+                case "video":
+                    if not isinstance(artifact.original_attachment, VkVideo):
+                        continue
+                    if artifact.width is None or artifact.height is None:
+                        raise PostProcessingError("Отсутствуют размеры видео.")
+                    prepared_attachment = PreparedVideoAttachment(
+                        file_path=artifact.file_path,
+                        filename=(
+                            artifact.original_attachment.title
+                            or f"{artifact.original_attachment.owner_id}_{artifact.original_attachment.id}"
+                        )
+                        + artifact.file_path.suffix,
+                        width=artifact.width,
+                        height=artifact.height,
+                        thumbnail_path=artifact.thumbnail_path,
+                    )
+                case "photo":
+                    if not isinstance(artifact.original_attachment, VkPhoto):
+                        continue
+                    prepared_attachment = PreparedPhotoAttachment(
+                        file_path=artifact.file_path,
+                        filename=artifact.file_path.stem + artifact.file_path.suffix,
+                    )
+                case "audio":
+                    if not isinstance(artifact.original_attachment, VkAudio):
+                        continue
+                    if artifact.artist is None or artifact.title is None:
+                        raise PostProcessingError("Отсутствуют исполнитель или название аудио.")
+                    prepared_attachment = PreparedAudioAttachment(
+                        file_path=artifact.file_path,
+                        filename=f"{artifact.artist} - {artifact.title}" + artifact.file_path.suffix,
+                        artist=artifact.artist,
+                        title=artifact.title,
+                    )
+                case "doc":
+                    if not isinstance(artifact.original_attachment, VkDoc):
+                        continue
+                    if artifact.filename is None:
+                        raise PostProcessingError("Отсутствует имя файла документа.")
+                    prepared_attachment = PreparedDocumentAttachment(
+                        file_path=artifact.file_path,
+                        filename=artifact.filename + artifact.file_path.suffix,
+                    )
+
+            if prepared_attachment:
+                prepared_post.attachments.append(prepared_attachment)
