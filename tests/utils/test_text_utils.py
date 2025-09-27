@@ -41,6 +41,22 @@ from src.reposter.utils.text_utils import extract_tags_from_text, normalize_link
             [],
         ),
         (
+            " ",
+            [],
+        ),
+        (
+            "\n",
+            [],
+        ),
+        (
+            "Line 1\n ",
+            [],
+        ),
+        (
+            "Line 1\n\t",
+            [],
+        ),
+        (
             "#tag1 #tag2",
             ["tag1", "tag2"],
         ),
@@ -94,6 +110,12 @@ TEST_CASES = [
         "👉[vk.comhttps://vk.com/@donut-android|http://vk.com/donut/dublikkk]",
         "👉\u200bvk.com/donut/dublikkk",
     ),
+    # 12. Test a link that is not a URL
+    ("not_a_url", "Not a URL: [some text|My Label]", "Not a URL: My Label"),
+    # 13. Test a domain-only link
+    ("domain_only", "Domain: [example.com|My Site]", "Domain: [My Site](example.com)"),
+    # 14. Test a URL without a protocol
+    ("no_protocol", "No protocol: example.com", "No protocol: example.com"),
 ]
 
 

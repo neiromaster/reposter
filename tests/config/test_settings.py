@@ -1,5 +1,7 @@
+# type: ignore[reportPrivateUsage]
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from _pytest.monkeypatch import MonkeyPatch
@@ -131,3 +133,67 @@ class TestSettingsValidation:
         )
         assert binding.telegram is not None
         assert binding.boosty is not None
+
+
+class TestYamlConfigSource:
+    @pytest.fixture
+    def mock_settings_cls(self):
+        """Fixture for a mock settings class."""
+        return type("MockSettings", (Settings,), {})
+
+    def test_file_changed_os_error(self, mock_settings_cls: type[Settings], tmp_path: Path):
+        """Test that _file_changed returns False on OSError."""
+        # Arrange
+        yaml_path = tmp_path / "config.yaml"
+        source = Settings.YamlConfigSource(mock_settings_cls, yaml_path)
+        with patch("pathlib.Path.stat", side_effect=OSError):
+            # Act & Assert
+            assert not source._file_changed()
+
+    def test_read_yaml_not_a_dict(self, mock_settings_cls: type[Settings], tmp_path: Path):
+        """Test that _read_yaml returns an empty dict if YAML is not a dict."""
+        # Arrange
+        yaml_path = tmp_path / "config.yaml"
+        yaml_path.write_text("not a dict")
+        source = Settings.YamlConfigSource(mock_settings_cls, yaml_path)
+        # Act
+        data = source._read_yaml()
+        # Assert
+        assert data == {}
+
+    def test_read_yaml_exception(self, mock_settings_cls: type[Settings], tmp_path: Path):
+        """Test that _read_yaml returns an empty dict on exception."""
+        # Arrange
+        yaml_path = tmp_path / "config.yaml"
+        yaml_path.write_text("invalid: yaml: here")
+        source = Settings.YamlConfigSource(mock_settings_cls, yaml_path)
+        # Act
+        data = source._read_yaml()
+        # Assert
+        assert data == {}
+
+    def test_get_field_value_not_in_data(self, mock_settings_cls: type[Settings], tmp_path: Path):
+        """Test get_field_value when the field is not in the data."""
+        # Arrange
+        yaml_path = tmp_path / "config.yaml"
+        source = Settings.YamlConfigSource(mock_settings_cls, yaml_path)
+        with patch.object(source, "_read_yaml", return_value={}):
+            # Act
+            value, _, is_complex = source.get_field_value(None, "some_field")
+            # Assert
+            assert value is None
+            assert not is_complex
+
+    def test_file_not_changed(self, mock_settings_cls: type[Settings], tmp_path: Path):
+        """Test that the YAML file is not re-read if it hasn't changed."""
+        # Arrange
+        yaml_path = tmp_path / "config.yaml"
+        yaml_path.write_text("app: {wait_time_seconds: 120}")
+        source = Settings.YamlConfigSource(mock_settings_cls, yaml_path)
+
+        # Act
+        first_read = source._read_yaml()
+        second_read = source._read_yaml()
+
+        # Assert
+        assert first_read is second_read

@@ -1,6 +1,7 @@
 # pyright: reportPrivateUsage=false
 from asyncio import Event
 from pathlib import Path
+from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -260,6 +261,138 @@ class TestBindingTaskExecutor:
         event = Event()
         binding_task_executor.set_shutdown_event(event)
         assert binding_task_executor._shutdown_event is event
+
+    @pytest.mark.asyncio
+    async def test_execute_no_new_posts(self, binding_task_executor: BindingTaskExecutor, monkeypatch: MonkeyPatch):
+        """Test execute when there are no new posts."""
+        monkeypatch.setenv("VK_SERVICE_TOKEN", "test_token")
+        settings = Settings.load()
+        settings.bindings = [
+            Binding(
+                vk=VKSource(domain="test", post_count=5, post_source="wall"),
+                telegram=TelegramTarget(channel_ids=[123]),
+            )
+        ]
+
+        with (
+            patch("src.reposter.executors.binding_task_executor.get_last_post_id", return_value=1),
+            patch.object(binding_task_executor.vk_manager, "get_vk_wall") as mock_get_vk_wall,
+            patch.object(binding_task_executor.post_processor, "process_post") as mock_process_post,
+        ):
+            mock_get_vk_wall.return_value = [
+                Post(id=1, text="old", date=1000, attachments=[], owner_id=1, from_id=1, is_pinned=None)
+            ]
+            await binding_task_executor.execute(settings)
+            mock_process_post.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_execute_shutdown_during_post_processing(
+        self, binding_task_executor: BindingTaskExecutor, monkeypatch: MonkeyPatch
+    ):
+        """Test execute with shutdown during post processing."""
+        monkeypatch.setenv("VK_SERVICE_TOKEN", "test_token")
+        settings = Settings.load()
+        settings.bindings = [
+            Binding(
+                vk=VKSource(domain="test", post_count=5, post_source="wall"),
+                telegram=TelegramTarget(channel_ids=[123]),
+            )
+        ]
+
+        shutdown_event = Event()
+        binding_task_executor.set_shutdown_event(shutdown_event)
+
+        with (
+            patch("src.reposter.executors.binding_task_executor.get_last_post_id", return_value=1),
+            patch.object(binding_task_executor.vk_manager, "get_vk_wall") as mock_get_vk_wall,
+            patch.object(binding_task_executor.post_processor, "process_post") as mock_process_post,
+        ):
+            mock_get_vk_wall.return_value = [
+                Post(id=2, text="new1", date=2000, attachments=[], owner_id=1, from_id=1, is_pinned=None),
+                Post(id=3, text="new2", date=3000, attachments=[], owner_id=1, from_id=1, is_pinned=None),
+            ]
+
+            def side_effect(*args: Any, **kwargs: Any) -> PreparedPost:
+                shutdown_event.set()
+                return PreparedPost(text="processed", attachments=[])
+
+            mock_process_post.side_effect = side_effect
+
+            await binding_task_executor.execute(settings)
+            mock_process_post.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_execute_post_processing_fails(
+        self, binding_task_executor: BindingTaskExecutor, monkeypatch: MonkeyPatch
+    ):
+        """Test execute when post processing fails."""
+        monkeypatch.setenv("VK_SERVICE_TOKEN", "test_token")
+        settings = Settings.load()
+        settings.bindings = [
+            Binding(
+                vk=VKSource(domain="test", post_count=5, post_source="wall"),
+                telegram=TelegramTarget(channel_ids=[123]),
+            )
+        ]
+
+        with (
+            patch("src.reposter.executors.binding_task_executor.get_last_post_id", return_value=1),
+            patch.object(binding_task_executor.vk_manager, "get_vk_wall") as mock_get_vk_wall,
+            patch.object(binding_task_executor.post_processor, "process_post") as mock_process_post,
+            patch.object(binding_task_executor.telegram_manager, "post_to_channels") as mock_post_to_channels,
+        ):
+            mock_get_vk_wall.return_value = [
+                Post(id=2, text="new", date=2000, attachments=[], owner_id=1, from_id=1, is_pinned=None)
+            ]
+            mock_process_post.side_effect = Exception("Processing error")
+
+            await binding_task_executor.execute(settings)
+            mock_post_to_channels.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_execute_debug_mode(self, binding_task_executor: BindingTaskExecutor, monkeypatch: MonkeyPatch):
+        """Test execute in debug mode."""
+        monkeypatch.setenv("VK_SERVICE_TOKEN", "test_token")
+        settings = Settings.load()
+        settings.bindings = [
+            Binding(
+                vk=VKSource(domain="test", post_count=5, post_source="wall"),
+                telegram=TelegramTarget(channel_ids=[123]),
+            )
+        ]
+        binding_task_executor.debug = True
+
+        with (
+            patch("src.reposter.executors.binding_task_executor.get_last_post_id", return_value=1),
+            patch("src.reposter.executors.binding_task_executor.save_new_posts_to_json") as mock_save_json,
+            patch.object(binding_task_executor.vk_manager, "get_vk_wall") as mock_get_vk_wall,
+        ):
+            mock_get_vk_wall.return_value = [
+                Post(id=2, text="new", date=2000, attachments=[], owner_id=1, from_id=1, is_pinned=None)
+            ]
+            await binding_task_executor.execute(settings)
+            mock_save_json.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_execute_get_posts_fails(self, binding_task_executor: BindingTaskExecutor, monkeypatch: MonkeyPatch):
+        """Test execute when getting posts fails."""
+        monkeypatch.setenv("VK_SERVICE_TOKEN", "test_token")
+        settings = Settings.load()
+        settings.bindings = [
+            Binding(
+                vk=VKSource(domain="test", post_count=5, post_source="wall"),
+                telegram=TelegramTarget(channel_ids=[123]),
+            )
+        ]
+
+        with (
+            patch("src.reposter.executors.binding_task_executor.get_last_post_id", return_value=1),
+            patch.object(binding_task_executor.vk_manager, "get_vk_wall") as mock_get_vk_wall,
+            patch.object(binding_task_executor.post_processor, "process_post") as mock_process_post,
+        ):
+            mock_get_vk_wall.side_effect = Exception("VK error")
+            await binding_task_executor.execute(settings)
+            mock_process_post.assert_not_called()
 
 
 class TestSaveNewPostsToJson:

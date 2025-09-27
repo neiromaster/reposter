@@ -24,7 +24,7 @@ run = "uv run pytest tests"
 
 [tasks.test-unit-with-fix]
 depends = ["types-with-fix"]
-run = "uv run pytest tests"
+run = "uv run pytest tests -n auto"
 
 [tasks.project]
 depends = ["types-with-fix", "test-unit-with-fix"]
