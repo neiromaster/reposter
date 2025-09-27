@@ -10,7 +10,7 @@ import pytest
 
 from src.reposter.config.settings import BoostyConfig, Settings
 from src.reposter.managers.boosty_manager import BoostyManager
-from src.reposter.models.dto import PreparedPost, PreparedVideoAttachment
+from src.reposter.models import PreparedPost, PreparedVideoAttachment
 
 
 @pytest.fixture

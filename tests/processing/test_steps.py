@@ -6,14 +6,14 @@ import pytest
 
 from src.reposter.managers.vk_manager import VKManager
 from src.reposter.managers.ytdlp_manager import YTDLPManager
-from src.reposter.models.dto import (
+from src.reposter.models import (
     Attachment,
     DownloadedPhotoArtifact,
     Photo,
     PhotoSize,
     PreparedPost,
 )
-from src.reposter.models.dto import (
+from src.reposter.models import (
     Post as VkPost,
 )
 from src.reposter.processing.steps import (

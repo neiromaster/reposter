@@ -1,7 +1,7 @@
 from collections.abc import Sequence
 
-from ..models.dto import Post as VkPost
-from ..models.dto import PreparedPost
+from ..models import Post as VkPost
+from ..models import PreparedPost
 from .steps import ProcessingStep
 
 

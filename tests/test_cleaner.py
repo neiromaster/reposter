@@ -3,7 +3,7 @@ from unittest.mock import patch
 
 import pytest
 
-from src.reposter.models.dto import PreparedAttachment, PreparedVideoAttachment
+from src.reposter.models import PreparedAttachment, PreparedVideoAttachment
 from src.reposter.utils.cleaner import delete_files_async
 
 

@@ -14,7 +14,7 @@ from pydantic import HttpUrl
 from src.reposter.config.settings import Settings
 from src.reposter.exceptions import VKApiError
 from src.reposter.managers.vk_manager import VKManager
-from src.reposter.models.dto import Post, VKAPIResponseDict
+from src.reposter.models import Post, VKAPIResponseDict
 
 
 @pytest.fixture

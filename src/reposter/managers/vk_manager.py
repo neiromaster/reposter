@@ -20,7 +20,7 @@ from tenacity import (
 from ..config.settings import Settings
 from ..exceptions import VKApiError
 from ..interfaces.base_manager import BaseManager
-from ..models.dto import Post, VKAPIResponseDict, WallGetResponse
+from ..models import Post, VKAPIResponseDict, WallGetResponse
 from ..utils.log import log
 
 

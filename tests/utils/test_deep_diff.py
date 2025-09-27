@@ -1,4 +1,4 @@
-from src.reposter.models.dto import Post
+from src.reposter.models import Post
 from src.reposter.utils.deep_diff import deep_diff
 
 

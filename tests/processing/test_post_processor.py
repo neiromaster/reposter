@@ -2,7 +2,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from src.reposter.models.dto import Post as VkPost
+from src.reposter.models import Post as VkPost
 from src.reposter.processing.post_processor import PostProcessor
 from src.reposter.processing.steps import ProcessingStep
 

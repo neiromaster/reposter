@@ -29,7 +29,7 @@ from src.reposter.managers.boosty_manager import BoostyManager
 from src.reposter.managers.telegram_manager import TelegramManager
 from src.reposter.managers.vk_manager import VKManager
 from src.reposter.managers.ytdlp_manager import YTDLPManager
-from src.reposter.models.dto import Post, PreparedPost
+from src.reposter.models import Post, PreparedPost
 from src.reposter.processing.post_processor import PostProcessor
 
 

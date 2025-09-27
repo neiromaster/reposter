@@ -6,16 +6,16 @@ from pymediainfo import MediaInfo
 from ..exceptions import PostProcessingError
 from ..managers.vk_manager import VKManager
 from ..managers.ytdlp_manager import YTDLPManager
-from ..models.dto import (
+from ..models import (
     Audio as VkAudio,
 )
-from ..models.dto import (
+from ..models import (
     CoverSize as VkCoverSize,
 )
-from ..models.dto import (
+from ..models import (
     Doc as VkDoc,
 )
-from ..models.dto import (
+from ..models import (
     DownloadedArtifact,
     DownloadedAudioArtifact,
     DownloadedDocumentArtifact,
@@ -27,13 +27,13 @@ from ..models.dto import (
     PreparedPost,
     PreparedVideoAttachment,
 )
-from ..models.dto import (
+from ..models import (
     Photo as VkPhoto,
 )
-from ..models.dto import (
+from ..models import (
     Post as VkPost,
 )
-from ..models.dto import (
+from ..models import (
     Video as VkVideo,
 )
 from ..utils.log import log
@@ -228,6 +228,8 @@ class AttachmentDtoCreationStep(ProcessingStep):
                         file_path=artifact.file_path,
                         filename=artifact.filename + artifact.file_path.suffix,
                     )
+                case _:
+                    pass
 
             if prepared_attachment:
                 prepared_post.attachments.append(prepared_attachment)

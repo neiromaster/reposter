@@ -6,7 +6,7 @@ import pytest
 import yaml
 
 from src.reposter.core.state_manager import _load_state, _save_state, get_last_post_id, set_last_post_id
-from src.reposter.models.dto import State
+from src.reposter.models import State
 
 
 class TestStateManager:

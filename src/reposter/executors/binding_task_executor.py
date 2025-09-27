@@ -12,7 +12,7 @@ from ..managers.boosty_manager import BoostyManager
 from ..managers.telegram_manager import TelegramManager
 from ..managers.vk_manager import VKManager
 from ..managers.ytdlp_manager import YTDLPManager
-from ..models.dto import Post as VkPost
+from ..models import Post as VkPost
 from ..processing.post_processor import PostProcessor
 from ..utils.cleaner import delete_files_async
 from ..utils.log import log

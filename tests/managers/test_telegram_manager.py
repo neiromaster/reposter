@@ -16,7 +16,7 @@ from pyrogram.types import (
 from src.reposter.config.settings import AppConfig, Settings, TelegramConfig
 from src.reposter.exceptions import TelegramManagerError
 from src.reposter.managers.telegram_manager import TelegramManager
-from src.reposter.models.dto import (
+from src.reposter.models import (
     PreparedAudioAttachment,
     PreparedDocumentAttachment,
     PreparedPhotoAttachment,

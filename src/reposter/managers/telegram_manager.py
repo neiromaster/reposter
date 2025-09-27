@@ -20,7 +20,7 @@ from tqdm import tqdm
 from ..config.settings import Settings, TelegramConfig
 from ..exceptions import TelegramManagerError
 from ..interfaces.base_manager import BaseManager
-from ..models.dto import (
+from ..models import (
     PreparedAttachment,
     PreparedAudioAttachment,
     PreparedDocumentAttachment,

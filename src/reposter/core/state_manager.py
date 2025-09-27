@@ -5,7 +5,7 @@ from pathlib import Path
 import aiofiles
 import yaml
 
-from ..models.dto import State
+from ..models import State
 from ..utils.log import log
 
 

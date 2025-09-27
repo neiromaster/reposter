@@ -15,7 +15,7 @@ from tqdm import tqdm
 
 from ..config.settings import BoostyConfig, Settings
 from ..interfaces.base_manager import BaseManager
-from ..models.dto import BoostyAuthData, PreparedPost, PreparedVideoAttachment
+from ..models import BoostyAuthData, PreparedPost, PreparedVideoAttachment
 from ..utils.log import log
 from ..utils.text_utils import extract_tags_from_text
 
