@@ -8,7 +8,7 @@ from src.reposter.managers.vk_manager import VKManager
 from src.reposter.managers.ytdlp_manager import YTDLPManager
 from src.reposter.models.dto import (
     Attachment,
-    DownloadedArtifact,
+    DownloadedPhotoArtifact,
     Photo,
     PhotoSize,
     PreparedPost,
@@ -144,8 +144,7 @@ async def test_attachment_dto_creation_step():
         text=vk_post.text,
         attachments=[],
         downloaded_artifacts=[
-            DownloadedArtifact(
-                type="photo",
+            DownloadedPhotoArtifact(
                 original_attachment=photo_attachment,
                 file_path=Path("photo.jpg"),
             ),

@@ -17,6 +17,10 @@ from ..models.dto import (
 )
 from ..models.dto import (
     DownloadedArtifact,
+    DownloadedAudioArtifact,
+    DownloadedDocumentArtifact,
+    DownloadedPhotoArtifact,
+    DownloadedVideoArtifact,
     PreparedAudioAttachment,
     PreparedDocumentAttachment,
     PreparedPhotoAttachment,
@@ -62,7 +66,7 @@ class AttachmentDownloaderStep(ProcessingStep):
 
     async def process(self, post: VkPost, prepared_post: PreparedPost) -> None:
         for attachment in post.attachments:
-            downloaded_artifact = None
+            downloaded_artifact: DownloadedArtifact | None = None
             match attachment.type:
                 case "video":
                     if attachment.video:
@@ -84,7 +88,7 @@ class AttachmentDownloaderStep(ProcessingStep):
             if downloaded_artifact:
                 prepared_post.downloaded_artifacts.append(downloaded_artifact)
 
-    async def _download_video(self, video: VkVideo) -> DownloadedArtifact:
+    async def _download_video(self, video: VkVideo) -> DownloadedVideoArtifact:
         log("🎬 Обрабатываю видео...", indent=4)
         video_path = await self.ytdlp.download_video(video.url)
         if not video_path:
@@ -107,8 +111,7 @@ class AttachmentDownloaderStep(ProcessingStep):
         except Exception as e:
             raise PostProcessingError(f"❌ Не удалось получить метаданные видео: {e}") from e
 
-        return DownloadedArtifact(
-            type="video",
+        return DownloadedVideoArtifact(
             original_attachment=video,
             file_path=video_path,
             width=width,
@@ -148,19 +151,18 @@ class AttachmentDownloaderStep(ProcessingStep):
 
         return sorted(candidates, key=sort_key)[0]
 
-    async def _download_photo(self, photo: VkPhoto) -> DownloadedArtifact:
+    async def _download_photo(self, photo: VkPhoto) -> DownloadedPhotoArtifact:
         log("📸 Обрабатываю фото...", indent=4)
         photo_path = await self.vk.download_file(photo.max_size_url, Path("downloads/photos"))
         if not photo_path:
             raise PostProcessingError("❌ Не удалось скачать фото.")
 
-        return DownloadedArtifact(
-            type="photo",
+        return DownloadedPhotoArtifact(
             original_attachment=photo,
             file_path=photo_path,
         )
 
-    async def _download_audio(self, audio: VkAudio) -> DownloadedArtifact:
+    async def _download_audio(self, audio: VkAudio) -> DownloadedAudioArtifact:
         log("🎵 Обрабатываю аудио...", indent=4)
 
         download_dir = Path("downloads/audio")
@@ -169,15 +171,14 @@ class AttachmentDownloaderStep(ProcessingStep):
         if not audio_path:
             raise PostProcessingError("❌ Не удалось скачать аудио.")
 
-        return DownloadedArtifact(
-            type="audio",
+        return DownloadedAudioArtifact(
             original_attachment=audio,
             file_path=audio_path,
             artist=audio.artist,
             title=audio.title,
         )
 
-    async def _download_doc(self, doc: VkDoc) -> DownloadedArtifact:
+    async def _download_doc(self, doc: VkDoc) -> DownloadedDocumentArtifact:
         log("📄 Обрабатываю документ...", indent=4)
 
         download_dir = Path("downloads/docs")
@@ -186,8 +187,7 @@ class AttachmentDownloaderStep(ProcessingStep):
         if not doc_path:
             raise PostProcessingError("❌ Не удалось скачать документ.")
 
-        return DownloadedArtifact(
-            type="doc",
+        return DownloadedDocumentArtifact(
             original_attachment=doc,
             file_path=doc_path,
             filename=doc.title,
@@ -198,12 +198,8 @@ class AttachmentDtoCreationStep(ProcessingStep):
     async def process(self, post: VkPost, prepared_post: PreparedPost) -> None:
         for artifact in prepared_post.downloaded_artifacts:
             prepared_attachment = None
-            match artifact.type:
-                case "video":
-                    if not isinstance(artifact.original_attachment, VkVideo):
-                        continue
-                    if artifact.width is None or artifact.height is None:
-                        raise PostProcessingError("Отсутствуют размеры видео.")
+            match artifact:
+                case DownloadedVideoArtifact():
                     prepared_attachment = PreparedVideoAttachment(
                         file_path=artifact.file_path,
                         filename=(
@@ -215,29 +211,19 @@ class AttachmentDtoCreationStep(ProcessingStep):
                         height=artifact.height,
                         thumbnail_path=artifact.thumbnail_path,
                     )
-                case "photo":
-                    if not isinstance(artifact.original_attachment, VkPhoto):
-                        continue
+                case DownloadedPhotoArtifact():
                     prepared_attachment = PreparedPhotoAttachment(
                         file_path=artifact.file_path,
                         filename=artifact.file_path.stem + artifact.file_path.suffix,
                     )
-                case "audio":
-                    if not isinstance(artifact.original_attachment, VkAudio):
-                        continue
-                    if artifact.artist is None or artifact.title is None:
-                        raise PostProcessingError("Отсутствуют исполнитель или название аудио.")
+                case DownloadedAudioArtifact():
                     prepared_attachment = PreparedAudioAttachment(
                         file_path=artifact.file_path,
                         filename=f"{artifact.artist} - {artifact.title}" + artifact.file_path.suffix,
                         artist=artifact.artist,
                         title=artifact.title,
                     )
-                case "doc":
-                    if not isinstance(artifact.original_attachment, VkDoc):
-                        continue
-                    if artifact.filename is None:
-                        raise PostProcessingError("Отсутствует имя файла документа.")
+                case DownloadedDocumentArtifact():
                     prepared_attachment = PreparedDocumentAttachment(
                         file_path=artifact.file_path,
                         filename=artifact.filename + artifact.file_path.suffix,
