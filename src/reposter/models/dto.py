@@ -171,6 +171,7 @@ class TelegramPost(BaseModel):
     attachments: list[
         PreparedPhotoAttachment | PreparedVideoAttachment | PreparedAudioAttachment | PreparedDocumentAttachment
     ]
+    tags: list[str] = Field(default_factory=list)
 
 
 # --- DTO for Boosty auth ---

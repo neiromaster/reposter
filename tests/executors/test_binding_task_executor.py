@@ -24,7 +24,6 @@ from src.reposter.config.settings import (
 from src.reposter.config.settings import (
     VKConfig as VKSource,
 )
-from src.reposter.core.post_processor import PostProcessor
 from src.reposter.executors.binding_task_executor import BindingTaskExecutor, save_new_posts_to_json
 from src.reposter.managers.boosty_manager import BoostyManager
 from src.reposter.managers.telegram_manager import TelegramManager
@@ -32,6 +31,7 @@ from src.reposter.managers.vk_manager import VKManager
 from src.reposter.managers.ytdlp_manager import YTDLPManager
 from src.reposter.models.dto import Post
 from src.reposter.models.dto import TelegramPost as PreparedPost
+from src.reposter.processing.post_processor import PostProcessor
 
 
 class TestBindingTaskExecutor:
