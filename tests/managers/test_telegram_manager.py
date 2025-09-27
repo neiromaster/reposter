@@ -20,8 +20,8 @@ from src.reposter.models.dto import (
     PreparedAudioAttachment,
     PreparedDocumentAttachment,
     PreparedPhotoAttachment,
+    PreparedPost,
     PreparedVideoAttachment,
-    TelegramPost,
 )
 
 
@@ -174,7 +174,7 @@ async def test_post_to_channels_text_only(
     mock_client_class.return_value = mock_instance
     await telegram_manager.setup(settings)
 
-    text_post = MagicMock(spec=TelegramPost)
+    text_post = MagicMock(spec=PreparedPost)
     text_post.text = "Hello world"
     text_post.attachments = []
 
@@ -203,7 +203,7 @@ async def test_post_to_channels_with_media(
     mock_client_class.return_value = mock_instance
     await telegram_manager.setup(settings)
 
-    media_post = MagicMock(spec=TelegramPost)
+    media_post = MagicMock(spec=PreparedPost)
     media_post.text = "Hello media"
     media_post.attachments = [MagicMock()]
 

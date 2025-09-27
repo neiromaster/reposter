@@ -25,8 +25,8 @@ from ..models.dto import (
     PreparedAudioAttachment,
     PreparedDocumentAttachment,
     PreparedPhotoAttachment,
+    PreparedPost,
     PreparedVideoAttachment,
-    TelegramPost,
 )
 from ..utils.cleaner import delete_files_async
 from ..utils.log import log
@@ -113,7 +113,7 @@ class TelegramManager(BaseManager):
         """Exit the async context manager and shutdown the client."""
         await self.shutdown()
 
-    async def post_to_channels(self, tg_config: TelegramConfig, posts: list[TelegramPost]) -> None:
+    async def post_to_channels(self, tg_config: TelegramConfig, posts: list[PreparedPost]) -> None:
         """Sends processed posts to Telegram channels."""
         log(f"✈️ Начало публикации {len(posts)} постов в каналы: {tg_config.channel_ids}", indent=3)
 

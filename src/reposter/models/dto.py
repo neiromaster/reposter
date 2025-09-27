@@ -181,7 +181,7 @@ class DownloadedArtifact(BaseModel):
     filename: str | None = None
 
 
-class TelegramPost(BaseModel):
+class PreparedPost(BaseModel):
     """A post that is fully prepared for sending."""
 
     text: str

@@ -20,8 +20,8 @@ from ..models.dto import (
     PreparedAudioAttachment,
     PreparedDocumentAttachment,
     PreparedPhotoAttachment,
+    PreparedPost,
     PreparedVideoAttachment,
-    TelegramPost,
 )
 from ..models.dto import (
     Photo as VkPhoto,
@@ -38,17 +38,17 @@ from ..utils.text_utils import extract_tags_from_text, normalize_links
 
 class ProcessingStep(ABC):
     @abstractmethod
-    async def process(self, post: VkPost, prepared_post: TelegramPost) -> None:
+    async def process(self, post: VkPost, prepared_post: PreparedPost) -> None:
         pass
 
 
 class LinkNormalizationStep(ProcessingStep):
-    async def process(self, post: VkPost, prepared_post: TelegramPost) -> None:
+    async def process(self, post: VkPost, prepared_post: PreparedPost) -> None:
         prepared_post.text = normalize_links(prepared_post.text)
 
 
 class TagExtractionStep(ProcessingStep):
-    async def process(self, post: VkPost, prepared_post: TelegramPost) -> None:
+    async def process(self, post: VkPost, prepared_post: PreparedPost) -> None:
         tags = extract_tags_from_text(prepared_post.text)
         if tags:
             prepared_post.tags = tags
@@ -60,7 +60,7 @@ class AttachmentDownloaderStep(ProcessingStep):
         self.vk = vk_manager
         self.ytdlp = ytdlp_manager
 
-    async def process(self, post: VkPost, prepared_post: TelegramPost) -> None:
+    async def process(self, post: VkPost, prepared_post: PreparedPost) -> None:
         for attachment in post.attachments:
             downloaded_artifact = None
             match attachment.type:
@@ -195,7 +195,7 @@ class AttachmentDownloaderStep(ProcessingStep):
 
 
 class AttachmentDtoCreationStep(ProcessingStep):
-    async def process(self, post: VkPost, prepared_post: TelegramPost) -> None:
+    async def process(self, post: VkPost, prepared_post: PreparedPost) -> None:
         for artifact in prepared_post.downloaded_artifacts:
             prepared_attachment = None
             match artifact.type:

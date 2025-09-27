@@ -10,7 +10,7 @@ import pytest
 
 from src.reposter.config.settings import BoostyConfig, Settings
 from src.reposter.managers.boosty_manager import BoostyManager
-from src.reposter.models.dto import PreparedVideoAttachment, TelegramPost
+from src.reposter.models.dto import PreparedPost, PreparedVideoAttachment
 
 
 @pytest.fixture
@@ -317,7 +317,7 @@ async def test_upload_video_shutdown_during_upload(boosty_manager: BoostyManager
 async def test_create_post_not_initialized(boosty_manager: BoostyManager, boosty_config: BoostyConfig):
     """Test create_post when not initialized."""
     # Arrange
-    post = TelegramPost(text="Test post", attachments=[])
+    post = PreparedPost(text="Test post", attachments=[])
 
     # Act & Assert
     with pytest.raises(RuntimeError, match="Boosty manager not initialized"):
@@ -331,7 +331,7 @@ async def test_create_post_no_video_attachments(
     """Test create_post with no video attachments."""
     # Arrange
     await boosty_manager.setup(settings)
-    post = TelegramPost(text="Test post", attachments=[])
+    post = PreparedPost(text="Test post", attachments=[])
 
     with patch("src.reposter.managers.boosty_manager.log") as mock_log:
         # Act
@@ -357,7 +357,7 @@ async def test_create_post_success(boosty_manager: BoostyManager, settings: Sett
     attachment = PreparedVideoAttachment(
         file_path=Path(video_path), filename="test_video.mp4", width=1920, height=1080, thumbnail_path=None
     )
-    post = TelegramPost(text="Test post", attachments=[attachment])
+    post = PreparedPost(text="Test post", attachments=[attachment])
 
     # Create mock auth data
     auth_data = {

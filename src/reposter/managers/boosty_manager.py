@@ -15,7 +15,7 @@ from tqdm import tqdm
 
 from ..config.settings import BoostyConfig, Settings
 from ..interfaces.base_manager import BaseManager
-from ..models.dto import BoostyAuthData, PreparedVideoAttachment, TelegramPost
+from ..models.dto import BoostyAuthData, PreparedPost, PreparedVideoAttachment
 from ..utils.log import log
 from ..utils.text_utils import extract_tags_from_text
 
@@ -236,7 +236,7 @@ class BoostyManager(BaseManager):
 
         return video_data
 
-    async def create_post(self, boosty_config: BoostyConfig, post: TelegramPost) -> list[dict[str, Any]]:
+    async def create_post(self, boosty_config: BoostyConfig, post: PreparedPost) -> list[dict[str, Any]]:
         """Creates a post on Boosty for each video attachment."""
         if not self._initialized or not self._client:
             raise RuntimeError("Boosty manager not initialized. Call setup() first.")

@@ -11,7 +11,7 @@ from src.reposter.models.dto import (
     DownloadedArtifact,
     Photo,
     PhotoSize,
-    TelegramPost,
+    PreparedPost,
 )
 from src.reposter.models.dto import (
     Post as VkPost,
@@ -42,7 +42,7 @@ async def test_link_normalization_step():
     # Arrange
     step = LinkNormalizationStep()
     vk_post = VkPost(id=1, owner_id=1, from_id=1, date=1, text="[club123|My Club]", attachments=[], is_pinned=0)
-    prepared_post = TelegramPost(text=vk_post.text, attachments=[])
+    prepared_post = PreparedPost(text=vk_post.text, attachments=[])
 
     # Act
     await step.process(vk_post, prepared_post)
@@ -57,7 +57,7 @@ async def test_tag_extraction_step():
     # Arrange
     step = TagExtractionStep()
     vk_post = VkPost(id=1, owner_id=1, from_id=1, date=1, text="Hello\n#tag1 #tag2", attachments=[], is_pinned=0)
-    prepared_post = TelegramPost(text=vk_post.text, attachments=[])
+    prepared_post = PreparedPost(text=vk_post.text, attachments=[])
 
     # Act
     await step.process(vk_post, prepared_post)
@@ -104,7 +104,7 @@ async def test_attachment_downloader_step_photo(mock_vk_manager: AsyncMock, mock
         ],
         is_pinned=0,
     )
-    prepared_post = TelegramPost(text=vk_post.text, attachments=[])
+    prepared_post = PreparedPost(text=vk_post.text, attachments=[])
 
     # Act
     await step.process(vk_post, prepared_post)
@@ -140,7 +140,7 @@ async def test_attachment_dto_creation_step():
         ),
     )
 
-    prepared_post = TelegramPost(
+    prepared_post = PreparedPost(
         text=vk_post.text,
         attachments=[],
         downloaded_artifacts=[
