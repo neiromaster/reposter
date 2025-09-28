@@ -113,6 +113,20 @@ class TelegramManager(BaseManager):
         """Exit the async context manager and shutdown the client."""
         await self.shutdown()
 
+    async def health_check(self) -> dict[str, Any]:
+        """Performs a health check of the Telegram API."""
+        if not self._initialized or not self._client:
+            return {"status": "error", "message": "TelegramManager not initialized"}
+
+        log("🩺 [TG] Проверка состояния...", indent=1)
+        try:
+            await self._client.get_me()
+            log("🩺 [TG] OK", indent=1)
+            return {"status": "ok"}
+        except Exception as e:
+            log(f"🩺 [TG] Ошибка: {e}", indent=1)
+            return {"status": "error", "message": str(e)}
+
     async def post_to_channels(self, tg_config: TelegramConfig, posts: list[PreparedPost]) -> None:
         """Sends processed posts to Telegram channels."""
         log(f"✈️ Начало публикации {len(posts)} постов в каналы: {tg_config.channel_ids}", indent=3)

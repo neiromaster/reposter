@@ -430,3 +430,39 @@ async def test_run_task_group_exception_logs_when_not_stopping(
     mock_log_fixture.assert_any_call("💥 Перехвачено исключение в задаче: Exception: Task group error")
     mock_log_fixture.assert_any_call("🔄 Возвращаюсь в режим ожидания...")
     assert mock_managers[0].update_config.call_count > 1
+
+
+@pytest.mark.asyncio
+async def test_input_watcher_health(app_manager: AppManager):
+    """Test the input watcher when 'health' is typed."""
+    # Arrange
+    app_manager.check_health = AsyncMock()
+
+    with patch("aioconsole.ainput", new_callable=AsyncMock) as mock_ainput:
+        mock_ainput.side_effect = ["health", asyncio.CancelledError()]
+
+        # Act
+        await app_manager._input_watcher()
+
+        # Assert
+        app_manager.check_health.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_check_health(app_manager: AppManager, mock_log_fixture: MagicMock):
+    """Test the check_health method."""
+    # Arrange
+    health_results = {
+        "VK": {"status": "ok"},
+        "Telegram": {"status": "error", "message": "Connection failed"},
+    }
+    app_manager._health_monitor.check_health = AsyncMock(return_value=health_results)
+
+    # Act
+    await app_manager.check_health()
+
+    # Assert
+    app_manager._health_monitor.check_health.assert_awaited_once()
+    mock_log_fixture.assert_any_call("🩺 Результаты проверки состояния:", padding_top=1)
+    mock_log_fixture.assert_any_call("  - VK: OK (No message)")
+    mock_log_fixture.assert_any_call("  - Telegram: ERROR (Connection failed)")

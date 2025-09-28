@@ -163,6 +163,33 @@ class VKManager(BaseManager):
 
         return await _download()
 
+    async def health_check(self) -> dict[str, Any]:
+        """Performs a health check of the VK API."""
+        if not self._initialized or not self._client:
+            return {"status": "error", "message": "VKManager not initialized"}
+
+        log("🩺 [VK] Проверка состояния...", indent=1)
+        try:
+            params = {
+                "owner_id": -1,  # A valid public group, e.g., VK Testers
+                "count": 0,
+                "access_token": self._service_token,
+                "v": "5.199",
+            }
+            resp = await self._client.get("https://api.vk.ru/method/wall.get", params=params)
+            resp.raise_for_status()
+            data: VKAPIResponseDict = resp.json()
+
+            if "error" in data:
+                log(f"🩺 [VK] Ошибка: {data['error']['error_msg']}", indent=1)
+                return {"status": "error", "message": data["error"]["error_msg"]}
+
+            log("🩺 [VK] OK", indent=1)
+            return {"status": "ok"}
+        except Exception as e:
+            log(f"🩺 [VK] Ошибка: {e}", indent=1)
+            return {"status": "error", "message": str(e)}
+
     async def get_vk_wall(self, domain: str, post_count: int, post_source: str) -> list[Post]:
         """Requests posts from a VK wall (or Donut) with retry and cancellation."""
 

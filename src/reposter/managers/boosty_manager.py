@@ -124,6 +124,21 @@ class BoostyManager(BaseManager):
             await asyncio.sleep(step)
             remaining -= step
 
+    async def health_check(self) -> dict[str, Any]:
+        """Performs a health check of the Boosty API."""
+        if not self._initialized or not self._client:
+            return {"status": "error", "message": "BoostyManager not initialized"}
+
+        log("🩺 [Boosty] Проверка состояния...", indent=1)
+        try:
+            resp = await self._client.get(self.BASE_URL)
+            resp.raise_for_status()
+            log("🩺 [Boosty] OK", indent=1)
+            return {"status": "ok"}
+        except Exception as e:
+            log(f"🩺 [Boosty] Ошибка: {e}", indent=1)
+            return {"status": "error", "message": str(e)}
+
     async def upload_video(self, video_path: str | Path) -> dict[str, Any] | None:
         """Uploads a video to Boosty."""
         if not self._initialized or not self._client:

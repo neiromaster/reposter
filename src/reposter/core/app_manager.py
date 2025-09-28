@@ -10,7 +10,11 @@ import aioconsole
 from ..interfaces.app_manager import BaseAppManager
 from ..interfaces.base_manager import BaseManager
 from ..interfaces.task_executor import BaseTaskExecutor
+from ..managers.boosty_manager import BoostyManager
+from ..managers.telegram_manager import TelegramManager
+from ..managers.vk_manager import VKManager
 from ..utils.log import log
+from .health_monitor import HealthMonitor
 from .settings_manager import SettingsManager
 
 
@@ -25,6 +29,7 @@ class AppManager(BaseAppManager):
         self._force_run_event = asyncio.Event()
         self._stop_app_event = asyncio.Event()
         self._settings_manager = SettingsManager()
+        self._health_monitor = HealthMonitor()
 
     async def _execute_task(self) -> None:
         """Wrapper for executing a task - contains no business logic."""
@@ -40,13 +45,20 @@ class AppManager(BaseAppManager):
                 log(f"❌ Ошибка в задаче: {type(e).__name__}: {e}")
 
     async def _input_watcher(self) -> None:
-        """Asynchronously waits for the Enter key and sets the force_run_event."""
+        """Asynchronously waits for user input and sets events."""
         while not self._stop_app_event.is_set():
             try:
-                await aioconsole.ainput()
-                if not self._stop_app_event.is_set():
+                command = await aioconsole.ainput()
+                if self._stop_app_event.is_set():
+                    break
+
+                if command.strip().lower() == "health":
+                    log("🩺 Запрос проверки состояния...", padding_top=1)
+                    await self.check_health()
+                else:
                     log("⌨️ Enter нажат, запускаю задачу вне очереди...", padding_top=1)
                     self._force_run_event.set()
+
             except (asyncio.CancelledError, EOFError):
                 break
             except Exception as e:
@@ -69,7 +81,7 @@ class AppManager(BaseAppManager):
                     wait_force = asyncio.create_task(self._force_run_event.wait())
                     wait_stop = asyncio.create_task(self._stop_app_event.wait())
 
-                    log(f"⏳ Ожидаю {timeout} сек...", padding_top=1)
+                    log(f"⏳ Ожидаю {timeout} сек... Enter - запуск, 'health' - проверка.", padding_top=1)
                     try:
                         _, pending = await asyncio.wait(
                             [wait_force, wait_stop],
@@ -110,12 +122,21 @@ class AppManager(BaseAppManager):
         if sys.platform != "win32":
             signal.signal(signal.SIGTERM, self._shutdown_handler)
 
+    async def check_health(self) -> None:
+        """Runs health checks for all registered managers."""
+        results = await self._health_monitor.check_health()
+        log("🩺 Результаты проверки состояния:", padding_top=1)
+        for name, result in results.items():
+            status = result.get("status", "error")
+            message = result.get("message", "No message")
+            log(f"  - {name}: {status.upper()} ({message})")
+
     async def run(self) -> None:
         """Main loop - manages the lifecycle, but not the business logic."""
         settings = self._settings_manager.get_settings()
 
         self._setup_signal_handlers()
-        log("🚀 Приложение запущено. Нажмите Enter для запуска задачи или Ctrl+C для выхода.")
+        log("🚀 Приложение запущено. Enter - запуск, 'health' - проверка, Ctrl+C - выход.")
 
         self._task_executor.set_shutdown_event(self._stop_app_event)
 
@@ -125,6 +146,13 @@ class AppManager(BaseAppManager):
                 manager.set_shutdown_event(self._stop_app_event)
                 await manager.setup(settings)
                 await stack.enter_async_context(manager)
+
+                if isinstance(manager, VKManager):
+                    self._health_monitor.register_check("VK", manager.health_check)
+                elif isinstance(manager, TelegramManager):
+                    self._health_monitor.register_check("Telegram", manager.health_check)
+                elif isinstance(manager, BoostyManager):
+                    self._health_monitor.register_check("Boosty", manager.health_check)
             log("✅ Менеджеры инициализированы.")
 
             try:
