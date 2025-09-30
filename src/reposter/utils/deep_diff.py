@@ -1,6 +1,8 @@
+from typing import Any
+
 from pydantic import BaseModel
 
-Comparable = BaseModel | dict[str, "Comparable"] | list["Comparable"] | str | int | float | bool | None
+Comparable = BaseModel | dict[str, Any] | list[Any] | str | int | float | bool | None
 
 
 def deep_diff(old: Comparable, new: Comparable, path: str = "") -> list[str]:

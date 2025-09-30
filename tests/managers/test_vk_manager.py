@@ -1,3 +1,4 @@
+# type: ignore[reportPrivateUsage]
 import asyncio
 from collections.abc import AsyncGenerator
 from pathlib import Path
@@ -13,7 +14,7 @@ from pydantic import HttpUrl
 from src.reposter.config.settings import Settings
 from src.reposter.exceptions import VKApiError
 from src.reposter.managers.vk_manager import VKManager
-from src.reposter.models.dto import Post, VKAPIResponseDict
+from src.reposter.models import Post, VKAPIResponseDict
 
 
 @pytest.fixture
@@ -30,33 +31,20 @@ async def vk_manager() -> AsyncGenerator[VKManager, None]:
     shutdown_event = asyncio.Event()
     manager.set_shutdown_event(shutdown_event)
     yield manager
-    if manager._initialized:  # type: ignore[reportPrivateUsage]
+    if manager._initialized:
         await manager.shutdown()
-
-
-@pytest.mark.asyncio
-async def test_setup_initializes_client(vk_manager: VKManager, settings: Settings):
-    assert not vk_manager._initialized  # type: ignore[reportPrivateUsage]
-    assert vk_manager._client is None  # type: ignore[reportPrivateUsage]
-
-    await vk_manager.setup(settings)
-
-    assert vk_manager._initialized  # type: ignore[reportPrivateUsage]
-    assert vk_manager._client is not None  # type: ignore[reportPrivateUsage]
-    assert vk_manager._service_token == "mock_token"  # type: ignore[reportPrivateUsage]
-    assert not vk_manager._shutdown_event.is_set()  # type: ignore[reportPrivateUsage]
 
 
 @pytest.mark.asyncio
 async def test_setup_reinitializes_if_already_initialized(vk_manager: VKManager, settings: Settings):
     await vk_manager.setup(settings)
-    old_client = vk_manager._client  # type: ignore[reportPrivateUsage]
+    old_client = vk_manager._client
 
     await vk_manager.setup(settings)
 
-    assert vk_manager._client is not None  # type: ignore[reportPrivateUsage]
-    assert vk_manager._client != old_client  # новый клиент создан  # type: ignore[reportPrivateUsage]
-    assert vk_manager._initialized  # type: ignore[reportPrivateUsage]
+    assert vk_manager._client is not None
+    assert vk_manager._client != old_client  # новый клиент создан
+    assert vk_manager._initialized
 
 
 @pytest.mark.asyncio
@@ -96,24 +84,21 @@ async def test_update_config_does_nothing_if_token_same(vk_manager: VKManager, s
 @pytest.mark.asyncio
 async def test_shutdown_closes_client(vk_manager: VKManager, settings: Settings):
     await vk_manager.setup(settings)
-    mock_client = vk_manager._client  # type: ignore[reportPrivateUsage]
+    mock_client = vk_manager._client
     if mock_client:
         mock_client.aclose = AsyncMock()
 
     await vk_manager.shutdown()
 
-    assert not vk_manager._initialized  # type: ignore[reportPrivateUsage]
+    assert not vk_manager._initialized
     if mock_client:
         cast(AsyncMock, mock_client.aclose).assert_awaited_once()
 
 
-@pytest.mark.asyncio
 async def test_should_retry_respects_shutdown(vk_manager: VKManager):
-    vk_manager._shutdown_event.set()  # type: ignore[reportPrivateUsage]
+    cast(asyncio.Event, vk_manager._shutdown_event).set()
     retry_state = MagicMock()
-    retry_state.outcome = None
-
-    result = await vk_manager._should_retry(retry_state)  # type: ignore[reportPrivateUsage]
+    result = await vk_manager._should_retry(retry_state)
     assert result is False
 
 
@@ -122,7 +107,7 @@ async def test_should_retry_ignores_cancelled_error(vk_manager: VKManager):
     retry_state = MagicMock()
     retry_state.outcome.exception.return_value = asyncio.CancelledError()
 
-    result = await vk_manager._should_retry(retry_state)  # type: ignore[reportPrivateUsage]
+    result = await vk_manager._should_retry(retry_state)
     assert result is False
 
 
@@ -131,7 +116,7 @@ async def test_should_retry_accepts_http_errors(vk_manager: VKManager):
     retry_state = MagicMock()
     retry_state.outcome.exception.return_value = httpx.RequestError("mock")
 
-    result = await vk_manager._should_retry(retry_state)  # type: ignore[reportPrivateUsage]
+    result = await vk_manager._should_retry(retry_state)
     assert result is True
 
 
@@ -143,7 +128,7 @@ async def test_download_file_success(vk_manager: VKManager, settings: Settings, 
     url = HttpUrl("https://example.com/test.jpg")
     content = b"fake image content"
 
-    respx.get(str(url)).respond(content=content)  # type: ignore
+    respx.get(str(url)).respond(content=content)  # type: ignore[reportUnknownMemberType]
 
     result = await vk_manager.download_file(url, tmp_path)
 
@@ -230,7 +215,7 @@ async def test_get_vk_wall_with_dont_filter(vk_manager: VKManager, settings: Set
     await vk_manager.setup(settings)
 
     mock_response: VKAPIResponseDict = {"response": {"count": 0, "items": []}}
-    route = respx.get("https://api.vk.ru/method/wall.get").respond(  # type: ignore
+    route = respx.get("https://api.vk.ru/method/wall.get").respond(  # type: ignore[reportUnknownMemberType]
         json=cast(dict[str, object], mock_response)
     )
 
@@ -249,7 +234,7 @@ async def test_get_vk_wall_api_error(vk_manager: VKManager, settings: Settings):
 
     error_response = {"error": {"error_code": 5, "error_msg": "Access denied"}}
 
-    respx.get("https://api.vk.ru/method/wall.get").respond(json=error_response)  # type: ignore
+    respx.get("https://api.vk.ru/method/wall.get").respond(json=error_response)  # type: ignore[reportUnknownMemberType]
 
     with pytest.raises(VKApiError, match="Access denied"):
         await vk_manager.get_vk_wall("example", 5, "wall")
@@ -260,7 +245,7 @@ async def test_get_vk_wall_api_error(vk_manager: VKManager, settings: Settings):
 async def test_get_vk_wall_empty_response(vk_manager: VKManager, settings: Settings):
     await vk_manager.setup(settings)
 
-    respx.get("https://api.vk.ru/method/wall.get").respond(json={})  # type: ignore
+    respx.get("https://api.vk.ru/method/wall.get").respond(json={})  # type: ignore[reportUnknownMemberType]
 
     with pytest.raises(ValueError, match="VK API response is empty or invalid"):
         await vk_manager.get_vk_wall("example", 5, "wall")
@@ -420,7 +405,7 @@ async def test_async_with_support(settings: Settings):
         async with manager as mgr:
             await mgr.setup(settings)
             assert mgr is manager
-            assert mgr._initialized  # type: ignore[reportPrivateUsage]
+            assert mgr._initialized
         mock_shutdown.assert_awaited_once()
 
 

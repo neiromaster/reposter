@@ -1,7 +1,8 @@
-from pathlib import Path
-from typing import Any, Literal, NotRequired, TypedDict
+from __future__ import annotations
 
-from pydantic import BaseModel, Field, HttpUrl, RootModel
+from typing import Any, Literal
+
+from pydantic import BaseModel, Field, HttpUrl
 
 
 class PhotoSize(BaseModel):
@@ -113,71 +114,3 @@ class Post(BaseModel):
 
 class WallGetResponse(BaseModel):
     items: list[Post]
-
-
-class State(RootModel[dict[str, dict[str, int]]]):
-    root: dict[str, dict[str, int]] = Field(default_factory=dict)
-
-
-# --- TypedDicts for raw API responses ---
-
-
-class VKErrorDict(TypedDict):
-    error_code: int
-    error_msg: str
-
-
-class WallGetResponseDict(TypedDict):
-    count: int
-    items: list[dict[str, Any]]
-
-
-class VKAPIResponseDict(TypedDict):
-    response: NotRequired[WallGetResponseDict]
-    error: NotRequired[VKErrorDict]
-
-
-# --- DTO for processed posts ---
-class PreparedAttachment(BaseModel):
-    """Base model for a processed attachment."""
-
-    file_path: Path
-    filename: str
-
-
-class PreparedPhotoAttachment(PreparedAttachment):
-    pass
-
-
-class PreparedVideoAttachment(PreparedAttachment):
-    width: int
-    height: int
-    thumbnail_path: Path | None = None
-
-
-class PreparedAudioAttachment(PreparedAttachment):
-    artist: str
-    title: str
-
-
-class PreparedDocumentAttachment(PreparedAttachment):
-    pass
-
-
-class TelegramPost(BaseModel):
-    """A post that is fully prepared for sending."""
-
-    text: str
-    attachments: list[
-        PreparedPhotoAttachment | PreparedVideoAttachment | PreparedAudioAttachment | PreparedDocumentAttachment
-    ]
-
-
-# --- DTO for Boosty auth ---
-class BoostyAuthData(BaseModel):
-    """Model for Boosty authentication data."""
-
-    access_token: str
-    refresh_token: str
-    device_id: str
-    expires_in: int

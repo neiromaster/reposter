@@ -15,9 +15,8 @@ from tqdm import tqdm
 
 from ..config.settings import BoostyConfig, Settings
 from ..interfaces.base_manager import BaseManager
-from ..models.dto import BoostyAuthData, PreparedVideoAttachment, TelegramPost
+from ..models import BoostyAuthData, PreparedPost, PreparedVideoAttachment
 from ..utils.log import log
-from ..utils.text_utils import extract_tags_from_text
 
 
 class BoostyManager(BaseManager):
@@ -57,7 +56,7 @@ class BoostyManager(BaseManager):
 
     async def _authorize(self, blog_name: str) -> None:
         """Authorize using auth.json file for specific blog."""
-        log(f"Авторизация в Boosty для блога {blog_name}...", indent=4)
+        log(f"🔑 Авторизация в Boosty для блога {blog_name}...", indent=4)
 
         if not os.path.exists(self._auth_path):
             raise FileNotFoundError(f"Файл авторизации не найден: {self._auth_path}")
@@ -82,7 +81,7 @@ class BoostyManager(BaseManager):
                     "x-app": "web",
                 }
             )
-        log("Авторизация успешна!", indent=4)
+        log("🔑 Авторизация успешна!", indent=4)
 
     async def update_config(self, settings: Settings) -> None:
         """Handles configuration updates."""
@@ -123,6 +122,21 @@ class BoostyManager(BaseManager):
         while remaining > 0 and (not self._shutdown_event or not self._shutdown_event.is_set()):
             await asyncio.sleep(step)
             remaining -= step
+
+    async def health_check(self) -> dict[str, Any]:
+        """Performs a health check of the Boosty API."""
+        if not self._initialized or not self._client:
+            return {"status": "error", "message": "BoostyManager not initialized"}
+
+        log("🩺 [Boosty] Проверка состояния...", indent=1)
+        try:
+            resp = await self._client.get(self.BASE_URL)
+            resp.raise_for_status()
+            log("🩺 [Boosty] OK", indent=1)
+            return {"status": "ok"}
+        except Exception as e:
+            log(f"🩺 [Boosty] Ошибка: {e}", indent=1)
+            return {"status": "error", "message": str(e)}
 
     async def upload_video(self, video_path: str | Path) -> dict[str, Any] | None:
         """Uploads a video to Boosty."""
@@ -236,7 +250,7 @@ class BoostyManager(BaseManager):
 
         return video_data
 
-    async def create_post(self, boosty_config: BoostyConfig, post: TelegramPost) -> list[dict[str, Any]]:
+    async def create_post(self, boosty_config: BoostyConfig, post: PreparedPost) -> list[dict[str, Any]]:
         """Creates a post on Boosty for each video attachment."""
         if not self._initialized or not self._client:
             raise RuntimeError("Boosty manager not initialized. Call setup() first.")
@@ -275,12 +289,11 @@ class BoostyManager(BaseManager):
                     {"content": "", "type": "text", "modificator": "BLOCK_END"},
                 ]
 
-                tags = extract_tags_from_text(post.text or "")
                 form_data: dict[str, Any] = {
                     "title": post_title,
                     "data": json.dumps(content_blocks),
                     "teaser_data": json.dumps(teaser_blocks),
-                    "tags": ",".join(tags),
+                    "tags": ",".join(post.tags),
                     "deny_comments": "false",
                     "wait_video": "false",
                 }

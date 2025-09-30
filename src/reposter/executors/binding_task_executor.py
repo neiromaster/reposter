@@ -6,14 +6,14 @@ from pathlib import Path
 import aiofiles
 
 from ..config.settings import Settings
-from ..core.post_processor import PostProcessor
 from ..core.state_manager import get_last_post_id, set_last_post_id
 from ..interfaces.task_executor import BaseTaskExecutor
 from ..managers.boosty_manager import BoostyManager
 from ..managers.telegram_manager import TelegramManager
 from ..managers.vk_manager import VKManager
 from ..managers.ytdlp_manager import YTDLPManager
-from ..models.dto import Post as VkPost
+from ..models import Post as VkPost
+from ..processing.post_processor import PostProcessor
 from ..utils.cleaner import delete_files_async
 from ..utils.log import log
 

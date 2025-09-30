@@ -20,13 +20,13 @@ from tqdm import tqdm
 from ..config.settings import Settings, TelegramConfig
 from ..exceptions import TelegramManagerError
 from ..interfaces.base_manager import BaseManager
-from ..models.dto import (
+from ..models import (
     PreparedAttachment,
     PreparedAudioAttachment,
     PreparedDocumentAttachment,
     PreparedPhotoAttachment,
+    PreparedPost,
     PreparedVideoAttachment,
-    TelegramPost,
 )
 from ..utils.cleaner import delete_files_async
 from ..utils.log import log
@@ -52,7 +52,7 @@ class TelegramManager(BaseManager):
 
     async def setup(self, settings: Settings) -> None:
         """Start the Telegram client session."""
-        log("✈️ [Telegram] Запуск...", indent=1)
+        log("✈️ [TG] Запуск...", indent=1)
         self._session_name = settings.app.session_name
         self._api_id = settings.telegram_api_id
         self._api_hash = settings.telegram_api_hash
@@ -65,14 +65,14 @@ class TelegramManager(BaseManager):
             )
             await self._client.start()
             self._initialized = True
-            log("✈️ [Telegram] Готов к работе.", indent=1)
+            log("✈️ [TG] Готов к работе.", indent=1)
         except asyncio.CancelledError:
-            log("✈️ [Telegram] Запуск прерван пользователем.", indent=1)
+            log("✈️ [TG] Запуск прерван пользователем.", indent=1)
             self._initialized = False
             raise
         except Exception:
             self._initialized = False
-            log("✈️ [Telegram] Ошибка запуска.", indent=1)
+            log("✈️ [TG] Ошибка запуска.", indent=1)
             raise
 
     async def update_config(self, settings: Settings) -> None:
@@ -86,7 +86,7 @@ class TelegramManager(BaseManager):
             or self._api_hash != settings.telegram_api_hash
             or self._session_name != settings.app.session_name
         ):
-            log("✈️ [Telegram] Конфигурация изменилась, перезапуск...", indent=1)
+            log("✈️ [TG] Конфигурация изменилась, перезапуск...", indent=1)
             await self.shutdown()
             await self.setup(settings)
 
@@ -94,11 +94,11 @@ class TelegramManager(BaseManager):
         """Stop the Telegram client session."""
         if not self._initialized:
             return
-        log("✈️ [Telegram] Завершение работы...", indent=1)
+        log("✈️ [TG] Завершение работы...", indent=1)
         if self._client and self._client.is_connected:
             await self._client.stop()
         self._initialized = False
-        log("✈️ [Telegram] Остановлен.", indent=1)
+        log("✈️ [TG] Остановлен.", indent=1)
 
     async def __aenter__(self) -> TelegramManager:
         """Enter the async context manager."""
@@ -113,7 +113,21 @@ class TelegramManager(BaseManager):
         """Exit the async context manager and shutdown the client."""
         await self.shutdown()
 
-    async def post_to_channels(self, tg_config: TelegramConfig, posts: list[TelegramPost]) -> None:
+    async def health_check(self) -> dict[str, Any]:
+        """Performs a health check of the Telegram API."""
+        if not self._initialized or not self._client:
+            return {"status": "error", "message": "TelegramManager not initialized"}
+
+        log("🩺 [TG] Проверка состояния...", indent=1)
+        try:
+            await self._client.get_me()
+            log("🩺 [TG] OK", indent=1)
+            return {"status": "ok"}
+        except Exception as e:
+            log(f"🩺 [TG] Ошибка: {e}", indent=1)
+            return {"status": "error", "message": str(e)}
+
+    async def post_to_channels(self, tg_config: TelegramConfig, posts: list[PreparedPost]) -> None:
         """Sends processed posts to Telegram channels."""
         log(f"✈️ Начало публикации {len(posts)} постов в каналы: {tg_config.channel_ids}", indent=3)
 
@@ -250,7 +264,7 @@ class TelegramManager(BaseManager):
 
     def _assign_caption_to_group(
         self,
-        uploaded_items: list[InputMediaPhoto | InputMediaVideo | InputMediaAudio | InputMediaDocument],
+        uploaded_items: Sequence[InputMediaPhoto | InputMediaVideo | InputMediaAudio | InputMediaDocument],
         caption: str,
     ) -> None:
         """Assigns caption to the first appropriate media item in a group."""
@@ -276,7 +290,7 @@ class TelegramManager(BaseManager):
     async def _forward_media_to_channel(
         self,
         channel_id: int | str,
-        uploaded_items: list[InputMediaPhoto | InputMediaVideo | InputMediaAudio | InputMediaDocument],
+        uploaded_items: Sequence[InputMediaPhoto | InputMediaVideo | InputMediaAudio | InputMediaDocument],
         separate_text: str | None,
     ) -> None:
         """Forwards uploaded media to a specific channel, respecting group rules."""

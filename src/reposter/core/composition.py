@@ -5,8 +5,15 @@ from ..managers.boosty_manager import BoostyManager
 from ..managers.telegram_manager import TelegramManager
 from ..managers.vk_manager import VKManager
 from ..managers.ytdlp_manager import YTDLPManager
+from ..processing.post_processor import PostProcessor
+from ..processing.steps import (
+    AttachmentDownloaderStep,
+    AttachmentDtoCreationStep,
+    LinkNormalizationStep,
+    TagExtractionStep,
+)
 from .app_manager import AppManager
-from .post_processor import PostProcessor
+from .event_system import EventManager
 
 
 class DefaultAppComposer(AppComposer):
@@ -16,10 +23,17 @@ class DefaultAppComposer(AppComposer):
         telegram_manager = TelegramManager()
         boosty_manager = BoostyManager()
 
-        post_processor = PostProcessor(
-            vk_manager=vk_manager,
-            ytdlp_manager=ytdlp_manager,
-        )
+        processing_steps = [
+            LinkNormalizationStep(),
+            TagExtractionStep(),
+            AttachmentDownloaderStep(
+                vk_manager=vk_manager,
+                ytdlp_manager=ytdlp_manager,
+            ),
+            AttachmentDtoCreationStep(),
+        ]
+
+        post_processor = PostProcessor(steps=processing_steps)
 
         task_executor = BindingTaskExecutor(
             vk_manager=vk_manager,
@@ -31,4 +45,5 @@ class DefaultAppComposer(AppComposer):
         )
 
         managers = [ytdlp_manager, vk_manager, telegram_manager, boosty_manager]
-        return AppManager(managers=managers, task_executor=task_executor)
+        event_manager = EventManager()
+        return AppManager(managers=managers, task_executor=task_executor, event_manager=event_manager)

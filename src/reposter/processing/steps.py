@@ -1,3 +1,4 @@
+from abc import ABC, abstractmethod
 from pathlib import Path
 
 from pymediainfo import MediaInfo
@@ -5,77 +6,89 @@ from pymediainfo import MediaInfo
 from ..exceptions import PostProcessingError
 from ..managers.vk_manager import VKManager
 from ..managers.ytdlp_manager import YTDLPManager
-from ..models.dto import (
+from ..models import (
     Audio as VkAudio,
 )
-from ..models.dto import (
+from ..models import (
     CoverSize as VkCoverSize,
 )
-from ..models.dto import (
+from ..models import (
     Doc as VkDoc,
 )
-from ..models.dto import (
-    Photo as VkPhoto,
-)
-from ..models.dto import (
-    Post as VkPost,
-)
-from ..models.dto import (
+from ..models import (
+    DownloadedArtifact,
+    DownloadedAudioArtifact,
+    DownloadedDocumentArtifact,
+    DownloadedPhotoArtifact,
+    DownloadedVideoArtifact,
     PreparedAudioAttachment,
     PreparedDocumentAttachment,
     PreparedPhotoAttachment,
+    PreparedPost,
     PreparedVideoAttachment,
-    TelegramPost,
 )
-from ..models.dto import (
+from ..models import (
+    Photo as VkPhoto,
+)
+from ..models import (
+    Post as VkPost,
+)
+from ..models import (
     Video as VkVideo,
 )
 from ..utils.log import log
-from ..utils.text_utils import normalize_links
+from ..utils.text_utils import extract_tags_from_text, normalize_links
 
 
-class PostProcessor:
+class ProcessingStep(ABC):
+    @abstractmethod
+    async def process(self, post: VkPost, prepared_post: PreparedPost) -> None:
+        pass
+
+
+class LinkNormalizationStep(ProcessingStep):
+    async def process(self, post: VkPost, prepared_post: PreparedPost) -> None:
+        prepared_post.text = normalize_links(prepared_post.text)
+
+
+class TagExtractionStep(ProcessingStep):
+    async def process(self, post: VkPost, prepared_post: PreparedPost) -> None:
+        tags = extract_tags_from_text(prepared_post.text)
+        if tags:
+            prepared_post.tags = tags
+            prepared_post.text = "\n".join(prepared_post.text.splitlines()[:-1]).strip()
+
+
+class AttachmentDownloaderStep(ProcessingStep):
     def __init__(self, vk_manager: VKManager, ytdlp_manager: YTDLPManager) -> None:
         self.vk = vk_manager
         self.ytdlp = ytdlp_manager
 
-    async def process_post(self, post: VkPost) -> TelegramPost:
-        """Converts a raw VK post into a Telegram-ready post."""
-        processed_text = self._process_text(post.text)
-
-        prepared_attachments: list[
-            PreparedPhotoAttachment | PreparedVideoAttachment | PreparedAudioAttachment | PreparedDocumentAttachment
-        ] = []
-
+    async def process(self, post: VkPost, prepared_post: PreparedPost) -> None:
         for attachment in post.attachments:
-            prepared_attachment = None
+            downloaded_artifact: DownloadedArtifact | None = None
             match attachment.type:
                 case "video":
                     if attachment.video:
-                        prepared_attachment = await self._process_video(attachment.video)
+                        downloaded_artifact = await self._download_video(attachment.video)
                 case "photo":
                     if attachment.photo:
-                        prepared_attachment = await self._process_photo(attachment.photo)
+                        downloaded_artifact = await self._download_photo(attachment.photo)
                 case "audio":
                     if attachment.audio:
-                        prepared_attachment = await self._process_audio(attachment.audio)
+                        downloaded_artifact = await self._download_audio(attachment.audio)
                 case "doc":
                     if attachment.doc:
-                        prepared_attachment = await self._process_doc(attachment.doc)
+                        downloaded_artifact = await self._download_doc(attachment.doc)
                 case "poll" | "link" | "graffiti" | "donut_link":
                     log(f"🚫 Пропускаю неподдерживаемое вложение типа: {attachment.type}", indent=4)
                 case _:
                     log(f"❓ Неизвестный тип вложения: {attachment.type}", indent=4)
 
-            if prepared_attachment:
-                prepared_attachments.append(prepared_attachment)
+            if downloaded_artifact:
+                prepared_post.downloaded_artifacts.append(downloaded_artifact)
 
-        return TelegramPost(text=processed_text, attachments=prepared_attachments)
-
-    def _process_text(self, text: str) -> str:
-        return normalize_links(text)
-
-    async def _process_video(self, video: VkVideo) -> PreparedVideoAttachment:
+    async def _download_video(self, video: VkVideo) -> DownloadedVideoArtifact:
         log("🎬 Обрабатываю видео...", indent=4)
         video_path = await self.ytdlp.download_video(video.url)
         if not video_path:
@@ -98,11 +111,9 @@ class PostProcessor:
         except Exception as e:
             raise PostProcessingError(f"❌ Не удалось получить метаданные видео: {e}") from e
 
-        filename = (video.title or f"{video.owner_id}_{video.id}") + video_path.suffix
-
-        return PreparedVideoAttachment(
+        return DownloadedVideoArtifact(
+            original_attachment=video,
             file_path=video_path,
-            filename=filename,
             width=width,
             height=height,
             thumbnail_path=thumb_path,
@@ -140,20 +151,18 @@ class PostProcessor:
 
         return sorted(candidates, key=sort_key)[0]
 
-    async def _process_photo(self, photo: VkPhoto) -> PreparedPhotoAttachment:
+    async def _download_photo(self, photo: VkPhoto) -> DownloadedPhotoArtifact:
         log("📸 Обрабатываю фото...", indent=4)
         photo_path = await self.vk.download_file(photo.max_size_url, Path("downloads/photos"))
         if not photo_path:
             raise PostProcessingError("❌ Не удалось скачать фото.")
 
-        filename = photo_path.stem + photo_path.suffix
-
-        return PreparedPhotoAttachment(
+        return DownloadedPhotoArtifact(
+            original_attachment=photo,
             file_path=photo_path,
-            filename=filename,
         )
 
-    async def _process_audio(self, audio: VkAudio) -> PreparedAudioAttachment:
+    async def _download_audio(self, audio: VkAudio) -> DownloadedAudioArtifact:
         log("🎵 Обрабатываю аудио...", indent=4)
 
         download_dir = Path("downloads/audio")
@@ -162,16 +171,14 @@ class PostProcessor:
         if not audio_path:
             raise PostProcessingError("❌ Не удалось скачать аудио.")
 
-        filename = f"{audio.artist} - {audio.title}" + audio_path.suffix
-
-        return PreparedAudioAttachment(
+        return DownloadedAudioArtifact(
+            original_attachment=audio,
             file_path=audio_path,
-            filename=filename,
             artist=audio.artist,
             title=audio.title,
         )
 
-    async def _process_doc(self, doc: VkDoc) -> PreparedDocumentAttachment:
+    async def _download_doc(self, doc: VkDoc) -> DownloadedDocumentArtifact:
         log("📄 Обрабатываю документ...", indent=4)
 
         download_dir = Path("downloads/docs")
@@ -180,9 +187,49 @@ class PostProcessor:
         if not doc_path:
             raise PostProcessingError("❌ Не удалось скачать документ.")
 
-        filename = doc.title + doc_path.suffix
-
-        return PreparedDocumentAttachment(
+        return DownloadedDocumentArtifact(
+            original_attachment=doc,
             file_path=doc_path,
-            filename=filename,
+            filename=doc.title,
         )
+
+
+class AttachmentDtoCreationStep(ProcessingStep):
+    async def process(self, post: VkPost, prepared_post: PreparedPost) -> None:
+        for artifact in prepared_post.downloaded_artifacts:
+            prepared_attachment = None
+            match artifact:
+                case DownloadedVideoArtifact():
+                    prepared_attachment = PreparedVideoAttachment(
+                        file_path=artifact.file_path,
+                        filename=(
+                            artifact.original_attachment.title
+                            or f"{artifact.original_attachment.owner_id}_{artifact.original_attachment.id}"
+                        )
+                        + artifact.file_path.suffix,
+                        width=artifact.width,
+                        height=artifact.height,
+                        thumbnail_path=artifact.thumbnail_path,
+                    )
+                case DownloadedPhotoArtifact():
+                    prepared_attachment = PreparedPhotoAttachment(
+                        file_path=artifact.file_path,
+                        filename=artifact.file_path.stem + artifact.file_path.suffix,
+                    )
+                case DownloadedAudioArtifact():
+                    prepared_attachment = PreparedAudioAttachment(
+                        file_path=artifact.file_path,
+                        filename=f"{artifact.artist} - {artifact.title}" + artifact.file_path.suffix,
+                        artist=artifact.artist,
+                        title=artifact.title,
+                    )
+                case DownloadedDocumentArtifact():
+                    prepared_attachment = PreparedDocumentAttachment(
+                        file_path=artifact.file_path,
+                        filename=artifact.filename + artifact.file_path.suffix,
+                    )
+                case _:
+                    pass
+
+            if prepared_attachment:
+                prepared_post.attachments.append(prepared_attachment)

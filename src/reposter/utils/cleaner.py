@@ -1,7 +1,7 @@
 from collections.abc import Sequence
 from pathlib import Path
 
-from ..models.dto import PreparedAttachment, PreparedVideoAttachment
+from ..models import PreparedAttachment, PreparedVideoAttachment
 from .log import log
 
 

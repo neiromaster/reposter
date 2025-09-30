@@ -8,7 +8,7 @@
     "reportMissingTypeStubs": true,
     "reportUnusedImport": true,
     "reportUnusedVariable": true,
-    "reportPrivateUsage": true,
+    "useLibraryCodeForTypes": true,
     "reportOptionalMemberAccess": true,
     "reportOptionalSubscript": true,
     "reportOptionalCall": true,

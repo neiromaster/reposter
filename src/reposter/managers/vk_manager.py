@@ -20,7 +20,7 @@ from tenacity import (
 from ..config.settings import Settings
 from ..exceptions import VKApiError
 from ..interfaces.base_manager import BaseManager
-from ..models.dto import Post, VKAPIResponseDict, WallGetResponse
+from ..models import Post, VKAPIResponseDict, WallGetResponse
 from ..utils.log import log
 
 
@@ -39,10 +39,10 @@ class VKManager(BaseManager):
     async def setup(self, settings: Settings) -> None:
         """Initializes the VK user manager and the HTTP client."""
         if self._initialized:
-            log("🌐 [VK User] Клиент уже запущен. Перезапуск...", indent=1)
+            log("🌐 [VK] Клиент уже запущен. Перезапуск...", indent=1)
             await self.shutdown()
 
-        log("🌐 [VK User] Запуск...", indent=1)
+        log("🌐 [VK] Запуск...", indent=1)
 
         self._user_token = settings.vk_user_token or ""
         self._service_token = settings.vk_service_token
@@ -54,7 +54,7 @@ class VKManager(BaseManager):
             follow_redirects=True,
         )
         self._initialized = True
-        log("🌐 [VK User] Готов к работе.", indent=1)
+        log("🌐 [VK] Готов к работе.", indent=1)
 
     async def update_config(self, settings: Settings) -> None:
         """Handles configuration updates."""
@@ -63,10 +63,10 @@ class VKManager(BaseManager):
             return
 
         if self._user_token == settings.vk_user_token and self._service_token == settings.vk_service_token:
-            log("🌐 [VK User] Конфигурация обновлена, без изменений.", indent=1)
+            log("🌐 [VK] Конфигурация обновлена, без изменений.", indent=1)
             return
 
-        log("🌐 [VK User] Конфигурация изменилась, перезапуск...", indent=1)
+        log("🌐 [VK] Конфигурация изменилась, перезапуск...", indent=1)
         await self.shutdown()
         await self.setup(settings)
 
@@ -74,11 +74,11 @@ class VKManager(BaseManager):
         """Initiates shutdown and closes the client."""
         if not self._initialized:
             return
-        log("🌐 [VK User] Завершение работы...", indent=1)
+        log("🌐 [VK] Завершение работы...", indent=1)
         if self._client and not self._client.is_closed:
             await self._client.aclose()
         self._initialized = False
-        log("🌐 [VK User] Остановлен.", indent=1)
+        log("🌐 [VK] Остановлен.", indent=1)
 
     async def __aenter__(self) -> VKManager:
         """Enter the async context manager."""
@@ -115,7 +115,7 @@ class VKManager(BaseManager):
         """Log before sleeping."""
         if retry_state.outcome and retry_state.next_action:
             log(
-                f"❌ [VK User] Ошибка: {retry_state.outcome.exception()}. "
+                f"❌ [VK] Ошибка: {retry_state.outcome.exception()}. "
                 f"Повтор через {retry_state.next_action.sleep:.2f} c...",
                 indent=1,
             )
@@ -134,7 +134,7 @@ class VKManager(BaseManager):
             if self._client is None:
                 raise RuntimeError("Client not initialized. Call setup() first.")
             if not url.path or url.path == "/":
-                log(f"⚠️ [VK User] URL не содержит пути для сохранения: {url}", indent=1)
+                log(f"⚠️ [VK] URL не содержит пути для сохранения: {url}", indent=1)
                 return None
 
             save_path = download_path / Path(url.path).name
@@ -147,13 +147,13 @@ class VKManager(BaseManager):
                         async for chunk in resp.aiter_bytes():
                             self._check_shutdown()
                             await f.write(chunk)
-                log(f"✅ [VK User] Файл сохранён: {save_path.name}", indent=5)
+                log(f"✅ [VK] Файл сохранён: {save_path.name}", indent=5)
                 return save_path
 
             except asyncio.CancelledError:
                 if save_path.exists():
                     save_path.unlink()
-                log("⏹️ [VK User] Загрузка файла прервана.", indent=1)
+                log("⏹️ [VK] Загрузка файла прервана.", indent=1)
                 raise
 
             except Exception:
@@ -162,6 +162,33 @@ class VKManager(BaseManager):
                 raise
 
         return await _download()
+
+    async def health_check(self) -> dict[str, Any]:
+        """Performs a health check of the VK API."""
+        if not self._initialized or not self._client:
+            return {"status": "error", "message": "VKManager not initialized"}
+
+        log("🩺 [VK] Проверка состояния...", indent=1)
+        try:
+            params = {
+                "owner_id": -1,  # A valid public group, e.g., VK Testers
+                "count": 0,
+                "access_token": self._service_token,
+                "v": "5.199",
+            }
+            resp = await self._client.get("https://api.vk.ru/method/wall.get", params=params)
+            resp.raise_for_status()
+            data: VKAPIResponseDict = resp.json()
+
+            if "error" in data:
+                log(f"🩺 [VK] Ошибка: {data['error']['error_msg']}", indent=1)
+                return {"status": "error", "message": data["error"]["error_msg"]}
+
+            log("🩺 [VK] OK", indent=1)
+            return {"status": "ok"}
+        except Exception as e:
+            log(f"🩺 [VK] Ошибка: {e}", indent=1)
+            return {"status": "error", "message": str(e)}
 
     async def get_vk_wall(self, domain: str, post_count: int, post_source: str) -> list[Post]:
         """Requests posts from a VK wall (or Donut) with retry and cancellation."""
@@ -195,7 +222,7 @@ class VKManager(BaseManager):
             if not self._user_token:
                 raise ValueError("User token is required for donut posts.")
 
-            log(f"🔍 [VK User] Собираю посты из VK Donut: {domain}...", indent=1)
+            log(f"🔍 [VK] Собираю посты из VK Donut: {domain}...", indent=1)
             params = {
                 "domain": domain,
                 "count": post_count,
@@ -207,7 +234,7 @@ class VKManager(BaseManager):
 
         # post_source == "wall"
         if self._user_token:
-            log(f"🔍 [VK User] Собираю посты со стены (с фильтрацией Donut): {domain}...", indent=1)
+            log(f"🔍 [VK] Собираю посты со стены (с фильтрацией Donut): {domain}...", indent=1)
             base_params = {
                 "domain": domain,
                 "count": post_count,
@@ -224,7 +251,7 @@ class VKManager(BaseManager):
             except VKApiError as e:
                 if "no access to donuts" in str(e):
                     log(
-                        "⚠️ [VK User] Нет доступа к донатным постам, невозможно отфильтровать. "
+                        "⚠️ [VK] Нет доступа к донатным постам, невозможно отфильтровать. "
                         "Возвращаются все посты со стены.",
                         indent=1,
                     )
@@ -233,7 +260,7 @@ class VKManager(BaseManager):
                     raise
         else:
             # service token only
-            log(f"🔍 [VK User] Собираю посты со стены: {domain}...", indent=1)
+            log(f"🔍 [VK] Собираю посты со стены: {domain}...", indent=1)
             params = {
                 "domain": domain,
                 "count": post_count,
