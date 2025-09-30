@@ -333,12 +333,16 @@ async def test_create_post_no_video_attachments(
     await boosty_manager.setup(settings)
     post = PreparedPost(text="Test post", attachments=[])
 
-    with patch("src.reposter.managers.boosty_manager.log") as mock_log:
+    with (
+        patch.object(boosty_manager, "_authorize", new_callable=AsyncMock) as mock_authorize,
+        patch("src.reposter.managers.boosty_manager.log") as mock_log,
+    ):
         # Act
         results = await boosty_manager.create_post(boosty_config, post)
 
         # Assert
         assert results == []
+        mock_authorize.assert_awaited_once_with(boosty_config.blog_name)
         mock_log.assert_called_with("📤 [Boosty] Нет видео для публикации, пост пропускается.", indent=4)
 
 

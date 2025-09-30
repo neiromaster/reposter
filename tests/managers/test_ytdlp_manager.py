@@ -194,18 +194,18 @@ async def test_restart_browser_kills_processes(ytdlp_manager: YTDLPManager, sett
 
     # Create mock processes to be killed
     mock_proc1 = Mock()
-    mock_proc1.info = {"name": "chrome.exe"}
+    mock_proc1.info = {"name": BROWSER_EXECUTABLES["chrome"]}
     mock_proc1.kill = Mock()
     mock_proc1.wait = Mock()  # This is a synchronous method, not async
 
     mock_proc2 = Mock()
-    mock_proc2.info = {"name": "chrome.exe"}
+    mock_proc2.info = {"name": BROWSER_EXECUTABLES["chrome"]}
     mock_proc2.kill = Mock()
     mock_proc2.wait = Mock()  # This is a synchronous method, not async
 
     # Mock subprocess.Popen to avoid actually starting a browser process
     with (
-        patch("psutil.process_iter", side_effect=[[mock_proc1], [mock_proc2]]),
+        patch("psutil.process_iter", return_value=[mock_proc1, mock_proc2]),
         patch("subprocess.Popen"),
         patch("asyncio.sleep", AsyncMock()),
     ):
