@@ -353,7 +353,6 @@ class TestBindingTaskExecutor:
             await binding_task_executor.execute(settings)
             mock_process_post.assert_not_called()
 
-
     @pytest.mark.asyncio
     async def test_execute_stops_binding_on_publication_error(
         self, binding_task_executor: BindingTaskExecutor, settings: Settings
@@ -375,7 +374,9 @@ class TestBindingTaskExecutor:
             patch("src.reposter.executors.binding_task_executor.set_last_post_id") as mock_set_last_post_id,
             patch.object(binding_task_executor.vk_manager, "get_vk_wall", return_value=[post1, post2]),
             patch.object(
-                binding_task_executor.post_processor, "process_post", return_value=PreparedPost(text="p", attachments=[])
+                binding_task_executor.post_processor,
+                "process_post",
+                return_value=PreparedPost(text="p", attachments=[]),
             ) as mock_process_post,
             patch.object(binding_task_executor.telegram_manager, "post_to_channels") as mock_post_to_channels,
         ):
