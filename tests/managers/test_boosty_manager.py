@@ -9,6 +9,7 @@ import httpx
 import pytest
 
 from src.reposter.config.settings import BoostyConfig, Settings
+from src.reposter.exceptions import BoostyPublicationError
 from src.reposter.managers.boosty_manager import BoostyManager
 from src.reposter.models import PreparedPost, PreparedVideoAttachment
 
@@ -347,83 +348,6 @@ async def test_create_post_no_video_attachments(
 
 
 @pytest.mark.asyncio
-async def test_create_post_success(boosty_manager: BoostyManager, settings: Settings, boosty_config: BoostyConfig):
-    """Test successful post creation."""
-    # Arrange
-    await boosty_manager.setup(settings)
-
-    # Create a temporary video file
-    with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as f:
-        f.write(b"test video content")
-        video_path = f.name
-
-    # Create attachment
-    attachment = PreparedVideoAttachment(
-        file_path=Path(video_path), filename="test_video.mp4", width=1920, height=1080, thumbnail_path=None
-    )
-    post = PreparedPost(text="Test post", attachments=[attachment])
-
-    # Create mock auth data
-    auth_data = {
-        "access_token": "test_token",
-        "refresh_token": "test_refresh",
-        "device_id": "test_device_id",
-        "expires_in": 3600,
-    }
-
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-        json.dump(auth_data, f)
-        temp_auth_path = f.name
-
-    boosty_manager._auth_path = temp_auth_path
-
-    # Mock client responses
-    mock_client = AsyncMock()
-    mock_client.get = AsyncMock(
-        return_value=Mock(
-            status_code=200, json=Mock(return_value={"uploadUrl": "http://test.com/upload", "id": "test_media_id"})
-        )
-    )
-    mock_client.post = AsyncMock(return_value=Mock(status_code=200, json=Mock(return_value={"id": "test_video_id"})))
-    mock_client.headers = {}
-    boosty_manager._client = mock_client
-
-    with (
-        patch("aiofiles.open") as mock_aiofiles_open,
-        patch("os.path.getsize", return_value=100),
-        patch("tqdm.tqdm"),
-        patch("src.reposter.managers.boosty_manager.log"),
-    ):
-        # This is a bit complex, but we need to handle two different files
-        # being opened by aiofiles.open
-        mock_video_file = AsyncMock()
-        mock_video_file.__aenter__ = AsyncMock(return_value=mock_video_file)
-        mock_video_file.read.side_effect = [b"test video content", b""]
-
-        mock_auth_file = AsyncMock()
-        mock_auth_file.__aenter__ = AsyncMock(return_value=mock_auth_file)
-        mock_auth_file.read.return_value = json.dumps(auth_data)
-
-        def open_side_effect(path: str, mode: str = "r", **kwargs: object):
-            if path == temp_auth_path:
-                return mock_auth_file
-            return mock_video_file
-
-        mock_aiofiles_open.side_effect = open_side_effect
-
-        # Act
-        results = await boosty_manager.create_post(boosty_config, post)
-
-        # Assert
-        assert isinstance(results, list)
-        # Note: Actual assertions depend on the complex mocking required for full flow
-
-    # Clean up
-    Path(video_path).unlink()
-    Path(temp_auth_path).unlink()
-
-
-@pytest.mark.asyncio
 async def test_check_shutdown_raises_cancelled_error(boosty_manager: BoostyManager):
     """Test that _check_shutdown raises CancelledError when shutdown event is set."""
     # Arrange
@@ -442,3 +366,140 @@ async def test_check_shutdown_no_exception(boosty_manager: BoostyManager):
 
     # Act & Assert - Should not raise any exceptions
     boosty_manager._check_shutdown()
+
+
+@pytest.mark.asyncio
+async def test_health_check_success(boosty_manager: BoostyManager, settings: Settings):
+    """Test health_check method with a successful response."""
+    await boosty_manager.setup(settings)
+    with patch.object(boosty_manager._client, "get", new_callable=AsyncMock) as mock_get:
+        mock_get.return_value = Mock(spec=httpx.Response, status_code=200)
+        result = await boosty_manager.health_check()
+        assert result == {"status": "ok"}
+        mock_get.assert_awaited_once_with(boosty_manager.BASE_URL)
+
+
+@pytest.mark.asyncio
+async def test_health_check_failure(boosty_manager: BoostyManager, settings: Settings):
+    """Test health_check method with a network error."""
+    await boosty_manager.setup(settings)
+    with patch.object(boosty_manager._client, "get", new_callable=AsyncMock) as mock_get:
+        mock_get.side_effect = httpx.RequestError("Network error")
+        result = await boosty_manager.health_check()
+        assert result["status"] == "error"
+        assert "Network error" in result["message"]
+
+
+@pytest.mark.asyncio
+async def test_health_check_not_initialized(boosty_manager: BoostyManager):
+    """Test health_check when the manager is not initialized."""
+    result = await boosty_manager.health_check()
+    assert result == {"status": "error", "message": "BoostyManager not initialized"}
+
+
+@pytest.mark.asyncio
+async def test_make_request_with_retries_success(boosty_manager: BoostyManager, settings: Settings):
+    """Test _make_request_with_retries succeeds on the first attempt."""
+    await boosty_manager.setup(settings)
+    with patch.object(boosty_manager._client, "request", new_callable=AsyncMock) as mock_request:
+        mock_response = Mock(spec=httpx.Response, status_code=200)
+        mock_request.return_value = mock_response
+        response = await boosty_manager._make_request_with_retries("get", "http://test.com")
+        assert response == mock_response
+        mock_request.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_make_request_with_retries_retry_and_succeed(boosty_manager: BoostyManager, settings: Settings):
+    """Test _make_request_with_retries retries on failure and then succeeds."""
+    await boosty_manager.setup(settings)
+    with (
+        patch.object(boosty_manager._client, "request", new_callable=AsyncMock) as mock_request,
+        patch.object(boosty_manager, "_sleep_cancelable", new_callable=AsyncMock) as mock_sleep,
+    ):
+        mock_success_response = Mock(spec=httpx.Response, status_code=200)
+        mock_request.side_effect = [httpx.RequestError("Network error"), mock_success_response]
+        response = await boosty_manager._make_request_with_retries("get", "http://test.com", max_retries=2)
+        assert response == mock_success_response
+        assert mock_request.call_count == 2
+        mock_sleep.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_make_request_with_retries_all_fail(boosty_manager: BoostyManager, settings: Settings):
+    """Test _make_request_with_retries fails after all retries."""
+    await boosty_manager.setup(settings)
+    with (
+        patch.object(boosty_manager._client, "request", new_callable=AsyncMock) as mock_request,
+        patch.object(boosty_manager, "_sleep_cancelable", new_callable=AsyncMock),
+    ):
+        mock_request.side_effect = httpx.RequestError("Network error")
+        with pytest.raises(BoostyPublicationError):
+            await boosty_manager._make_request_with_retries("get", "http://test.com", max_retries=2)
+        assert mock_request.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_upload_video_success(boosty_manager: BoostyManager, settings: Settings):
+    """Test successful video upload."""
+    await boosty_manager.setup(settings)
+
+    with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as f:
+        f.write(b"test video content")
+        video_path = f.name
+
+    prepare_response = {"uploadUrl": "http://test.com/upload", "id": "test_media_id"}
+    finish_response = {"id": "final_video_id"}
+
+    with (
+        patch.object(boosty_manager, "_make_request_with_retries", new_callable=AsyncMock) as mock_make_request,
+        patch("aiofiles.open") as mock_aiofiles,
+        patch("os.path.getsize", return_value=100),
+        patch("tqdm.tqdm"),
+    ):
+        # Simulate reading file in chunks
+        mock_file = AsyncMock()
+        mock_file.read.side_effect = [b"first chunk", b"second chunk", b""]
+        mock_aiofiles.return_value.__aenter__.return_value = mock_file
+
+        # Simulate API call responses
+        mock_make_request.side_effect = [
+            AsyncMock(spec=httpx.Response, json=lambda: prepare_response),
+            AsyncMock(spec=httpx.Response, status_code=200),  # First chunk
+            AsyncMock(spec=httpx.Response, status_code=200),  # Second chunk
+            AsyncMock(spec=httpx.Response, json=lambda: finish_response),
+        ]
+
+        result = await boosty_manager.upload_video(video_path)
+
+        assert result == finish_response
+        assert mock_make_request.call_count == 4  # prepare, chunk1, chunk2, finish
+
+    Path(video_path).unlink()
+
+
+@pytest.mark.asyncio
+async def test_create_post_success(boosty_manager: BoostyManager, settings: Settings, boosty_config: BoostyConfig):
+    """Test successful post creation with simplified mocks."""
+    await boosty_manager.setup(settings)
+
+    attachment = PreparedVideoAttachment(
+        file_path=Path("dummy.mp4"), filename="dummy.mp4", width=1920, height=1080, thumbnail_path=None
+    )
+    post = PreparedPost(text="Test post", attachments=[attachment], tags=["tag1"])
+
+    mock_video_data = {"id": "test_video_id"}
+    mock_publish_response = {"data": {"post": {"id": "12345"}}}
+
+    with (
+        patch.object(boosty_manager, "_authorize", new_callable=AsyncMock),
+        patch.object(boosty_manager, "upload_video", new_callable=AsyncMock, return_value=mock_video_data),
+        patch.object(boosty_manager, "_make_request_with_retries", new_callable=AsyncMock) as mock_make_request,
+    ):
+        mock_make_request.return_value = AsyncMock(spec=httpx.Response, json=lambda: mock_publish_response)
+
+        results = await boosty_manager.create_post(boosty_config, post)
+
+        assert len(results) == 1
+        assert results[0] == mock_publish_response
+        mock_make_request.assert_awaited_once()

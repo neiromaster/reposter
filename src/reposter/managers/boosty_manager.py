@@ -14,6 +14,7 @@ import httpx
 from tqdm import tqdm
 
 from ..config.settings import BoostyConfig, Settings
+from ..exceptions import BoostyPublicationError
 from ..interfaces.base_manager import BaseManager
 from ..models import BoostyAuthData, PreparedPost, PreparedVideoAttachment
 from ..utils.log import log
@@ -138,6 +139,42 @@ class BoostyManager(BaseManager):
             log(f"🩺 [Boosty] Ошибка: {e}", indent=1)
             return {"status": "error", "message": str(e)}
 
+    async def _make_request_with_retries(
+        self,
+        method: str,
+        url: str,
+        max_retries: int = 3,
+        retry_delay: int = 5,
+        **kwargs: Any,
+    ) -> httpx.Response:
+        """Make an HTTP request with retries."""
+        if not self._client:
+            raise RuntimeError("Boosty manager not initialized.")
+
+        for attempt in range(max_retries):
+            self._check_shutdown()
+            try:
+                response = await self._client.request(method, url, **kwargs)
+                if response.status_code not in [200, 201]:
+                    raise httpx.HTTPStatusError(
+                        f"HTTP {response.status_code}", request=response.request, response=response
+                    )
+                return response
+            except (httpx.RequestError, httpx.HTTPStatusError) as e:
+                if attempt < max_retries - 1:
+                    self._check_shutdown()
+                    log(
+                        f"📥 [Boosty] Ошибка запроса: {e}. "
+                        f"Попытка {attempt + 2}/{max_retries} через {retry_delay} сек...",
+                        indent=3,
+                    )
+                    await self._sleep_cancelable(retry_delay)
+                else:
+                    raise BoostyPublicationError(
+                        f"Не удалось выполнить запрос {method.upper()} {url} после {max_retries} попыток: {e}"
+                    ) from e
+        raise BoostyPublicationError(f"Не удалось выполнить запрос {method.upper()} {url} после {max_retries} попыток.")
+
     async def upload_video(self, video_path: str | Path) -> dict[str, Any] | None:
         """Uploads a video to Boosty."""
         if not self._initialized or not self._client:
@@ -157,12 +194,7 @@ class BoostyManager(BaseManager):
         prepare_url = urljoin(self.BASE_URL, "/v1/media_data/video/upload_url")
         params = {"file_name": filename, "container_type": "post_draft"}
 
-        prepare_response = await self._client.get(prepare_url, params=params)
-
-        self._check_shutdown()
-
-        if prepare_response.status_code != 200:
-            raise Exception(f"Ошибка подготовки загрузки: {prepare_response.status_code} - {prepare_response.text}")
+        prepare_response = await self._make_request_with_retries("get", prepare_url, params=params)
 
         upload_data = prepare_response.json()
         upload_url = upload_data["uploadUrl"]
@@ -202,34 +234,9 @@ class BoostyManager(BaseManager):
                         "X-Uploading-Mode": "parallel",
                     }
 
-                    max_retries = 3
-                    retry_delay = 5  # seconds
-                    for attempt in range(max_retries):
-                        self._check_shutdown()
-
-                        try:
-                            response = await self._client.post(
-                                upload_url,
-                                content=chunk,
-                                headers=headers,
-                                timeout=30.0,  # 30-секундный таймаут
-                            )
-                            if response.status_code not in [200, 201]:
-                                raise Exception(f"HTTP {response.status_code}")
-
-                            break
-                        except Exception as e:
-                            if attempt < max_retries - 1:
-                                self._check_shutdown()
-
-                                log(
-                                    f"📥 [Boosty] Ошибка загрузки чанка: {e}. "
-                                    f"Попытка {attempt + 2}/{max_retries} через {retry_delay} сек...",
-                                    indent=3,
-                                )
-                                await self._sleep_cancelable(retry_delay)
-                            else:
-                                raise Exception(f"Не удалось загрузить чанк после {max_retries} попыток: {e}") from None
+                    await self._make_request_with_retries(
+                        "post", upload_url, content=chunk, headers=headers, timeout=30.0
+                    )
 
                     offset += len(chunk)
                     pbar.update(len(chunk) / (1024 * 1024))
@@ -238,12 +245,7 @@ class BoostyManager(BaseManager):
         log("📥 [Boosty] Шаг 3/3: Завершение загрузки на сервере Boosty...", indent=4)
 
         finish_url = urljoin(self.BASE_URL, f"/v1/media_data/video/{media_id}/finish")
-        finish_response = await self._client.post(finish_url)
-
-        self._check_shutdown()
-
-        if finish_response.status_code != 200:
-            raise Exception(f"Ошибка завершения загрузки: {finish_response.status_code} - {finish_response.text}")
+        finish_response = await self._make_request_with_retries("post", finish_url)
 
         video_data = finish_response.json()
         log(f"📥 [Boosty] Загрузка завершена. Итоговый ID видео: {video_data.get('id')}", indent=4)
@@ -307,13 +309,7 @@ class BoostyManager(BaseManager):
 
                 log(f"📤 [Boosty] Публикация поста '{post_title}'...", indent=3)
 
-                response = await self._client.post(publish_url, data=form_data)
-
-                self._check_shutdown()
-
-                if response.status_code != 200:
-                    log(f"❌ [Boosty] Ошибка публикации поста: {response.status_code} — {response.text}", indent=3)
-                    continue
+                response = await self._make_request_with_retries("post", publish_url, data=form_data)
 
                 result = response.json()
                 post_data = result.get("data", {}).get("post", {})
@@ -327,6 +323,6 @@ class BoostyManager(BaseManager):
 
             except Exception as e:
                 log(f"❌ [Boosty] Ошибка при обработке видео {attachment.file_path}: {e}", indent=3)
-                continue
+                raise BoostyPublicationError(f"Failed to process video {attachment.file_path}: {e}") from e
 
         return results

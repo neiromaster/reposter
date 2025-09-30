@@ -17,3 +17,9 @@ class VKApiError(Exception):
     """Custom exception for errors returned by the VK API."""
 
     pass
+
+
+class BoostyPublicationError(Exception):
+    """Custom exception for errors during Boosty post creation."""
+
+    pass

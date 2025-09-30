@@ -354,6 +354,44 @@ class TestBindingTaskExecutor:
             mock_process_post.assert_not_called()
 
 
+    @pytest.mark.asyncio
+    async def test_execute_stops_binding_on_publication_error(
+        self, binding_task_executor: BindingTaskExecutor, settings: Settings
+    ):
+        """Test that processing of a binding stops if one of the posts fails to publish."""
+        settings.bindings = [
+            Binding(
+                vk=VKSource(domain="test", post_count=5, post_source="wall"),
+                telegram=TelegramTarget(channel_ids=[123]),
+            )
+        ]
+
+        # Create sample posts
+        post1 = Post(id=2, text="new1", date=2000, attachments=[], owner_id=1, from_id=1, is_pinned=None)
+        post2 = Post(id=3, text="new2", date=3000, attachments=[], owner_id=1, from_id=1, is_pinned=None)
+
+        with (
+            patch("src.reposter.executors.binding_task_executor.get_last_post_id", return_value=1),
+            patch("src.reposter.executors.binding_task_executor.set_last_post_id") as mock_set_last_post_id,
+            patch.object(binding_task_executor.vk_manager, "get_vk_wall", return_value=[post1, post2]),
+            patch.object(
+                binding_task_executor.post_processor, "process_post", return_value=PreparedPost(text="p", attachments=[])
+            ) as mock_process_post,
+            patch.object(binding_task_executor.telegram_manager, "post_to_channels") as mock_post_to_channels,
+        ):
+            # Make publication fail on the first post
+            mock_post_to_channels.side_effect = Exception("Publication error")
+
+            # Execute
+            await binding_task_executor.execute(settings)
+
+            # Assert that post processor was only called for the first post
+            mock_process_post.assert_called_once_with(post1)
+
+            # Assert that set_last_post_id was never called
+            mock_set_last_post_id.assert_not_called()
+
+
 class TestSaveNewPostsToJson:
     @pytest.mark.asyncio
     async def test_save_new_posts_to_json_success(self, tmp_path: Path):
