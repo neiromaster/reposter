@@ -13,6 +13,7 @@ from ..processing.steps import (
     TagExtractionStep,
 )
 from .app_manager import AppManager
+from .event_system import EventManager
 
 
 class DefaultAppComposer(AppComposer):
@@ -44,4 +45,5 @@ class DefaultAppComposer(AppComposer):
         )
 
         managers = [ytdlp_manager, vk_manager, telegram_manager, boosty_manager]
-        return AppManager(managers=managers, task_executor=task_executor)
+        event_manager = EventManager()
+        return AppManager(managers=managers, task_executor=task_executor, event_manager=event_manager)

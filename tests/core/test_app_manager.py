@@ -1,20 +1,35 @@
 # type: ignore[reportPrivateUsage]
 import asyncio
-import signal
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
 
 from src.reposter.core.app_manager import AppManager
+from src.reposter.core.event_system import (
+    AppStartEvent,
+    AppStopEvent,
+    EventManager,
+    HealthCheckRequestEvent,
+    TaskExecutionCompleteEvent,
+    TaskExecutionRequestEvent,
+    UserInputReceivedEvent,
+)
 from src.reposter.interfaces.base_manager import BaseManager
 from src.reposter.interfaces.task_executor import BaseTaskExecutor
+from src.reposter.managers.boosty_manager import BoostyManager
+from src.reposter.managers.telegram_manager import TelegramManager
+from src.reposter.managers.vk_manager import VKManager
 
 
 @pytest.fixture
 def mock_managers() -> list[AsyncMock]:
     """Fixture for mocking managers."""
-    return [AsyncMock(spec=BaseManager), AsyncMock(spec=BaseManager)]
+    return [
+        AsyncMock(spec=VKManager),
+        AsyncMock(spec=TelegramManager),
+        AsyncMock(spec=BoostyManager),
+    ]
 
 
 @pytest.fixture
@@ -30,439 +45,281 @@ def mock_settings_manager() -> MagicMock:
 
 
 @pytest.fixture
+def mock_event_manager() -> AsyncMock:
+    """Fixture for mocking the event manager."""
+    return AsyncMock(spec=EventManager)
+
+
+@pytest.fixture
 def app_manager(
     mock_managers: list[BaseManager],
     mock_task_executor: BaseTaskExecutor,
     mock_settings_manager: MagicMock,
+    mock_event_manager: AsyncMock,
 ) -> AppManager:
     """Fixture for creating an AppManager instance."""
-    manager = AppManager(mock_managers, mock_task_executor)
+    manager = AppManager(mock_managers, mock_task_executor, mock_event_manager)
     manager._settings_manager = mock_settings_manager
     mock_settings_manager.get_settings.return_value.app.wait_time_seconds = 0.1
     return manager
 
 
 @pytest.mark.asyncio
-async def test_execute_task_success(
-    app_manager: AppManager, mock_task_executor: AsyncMock, mock_settings_manager: MagicMock
+async def test_run_emits_app_start_and_stop_events(
+    app_manager: AppManager,
+    mock_managers: list[AsyncMock],
+    mock_task_executor: AsyncMock,
+    mock_event_manager: AsyncMock,
 ):
-    """Test successful task execution."""
-    # Arrange
-    mock_settings_manager.get_settings.return_value = MagicMock()
-
-    # Act
-    await app_manager._execute_task()
-
-    # Assert
-    mock_task_executor.execute.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-async def test_execute_task_cancelled(app_manager: AppManager, mock_task_executor: AsyncMock):
-    """Test task execution when cancelled."""
-    # Arrange
-    mock_task_executor.execute.side_effect = asyncio.CancelledError()
-
-    # Act & Assert
-    # Should not raise any exception
-    await app_manager._execute_task()
-
-
-@pytest.mark.asyncio
-async def test_execute_task_exception(app_manager: AppManager, mock_task_executor: AsyncMock):
-    """Test task execution with an exception."""
-    # Arrange
-    mock_task_executor.execute.side_effect = Exception("Test exception")
-
-    # Act & Assert
-    # Should not raise any exception
-    await app_manager._execute_task()
-
-
-@pytest.mark.asyncio
-async def test_input_watcher_enter(app_manager: AppManager):
-    """Test the input watcher when Enter is pressed."""
-
-    # Arrange
-    async def side_effect(*args: Any, **kwargs: Any) -> None:
-        app_manager._force_run_event.set()
-        raise asyncio.CancelledError()
-
-    with patch("aioconsole.ainput", new_callable=AsyncMock) as mock_ainput:
-        mock_ainput.side_effect = side_effect
-
-        # Act
-        await app_manager._input_watcher()
-
-        # Assert
-        mock_ainput.assert_awaited_once()
-        assert app_manager._force_run_event.is_set()
-
-
-@pytest.mark.asyncio
-async def test_input_watcher_eof(app_manager: AppManager):
-    """Test the input watcher with EOFError."""
-    # Arrange
-    with patch("aioconsole.ainput", new_callable=AsyncMock) as mock_ainput:
-        mock_ainput.side_effect = EOFError()
-
-        # Act & Assert
-        # Should not raise any exception
-        await app_manager._input_watcher()
-
-
-@pytest.mark.asyncio
-async def test_periodic_wrapper_runs_once(app_manager: AppManager, mock_task_executor: AsyncMock):
-    """Test that the periodic wrapper runs a task and then stops."""
-
-    # Arrange
-    async def side_effect(*args: Any, **kwargs: Any) -> None:
-        app_manager._stop_app_event.set()
-
-    mock_task_executor.execute.side_effect = side_effect
-
-    # Act
-    await app_manager._periodic_wrapper()
-
-    # Assert
-    mock_task_executor.execute.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-async def test_periodic_wrapper_force_run(app_manager: AppManager, mock_task_executor: AsyncMock):
-    """Test that the periodic wrapper is interrupted by the force run event."""
-    # Arrange
-    counter = 0
-
-    async def side_effect(*args: Any, **kwargs: Any) -> None:
-        nonlocal counter
-        counter += 1
-        if counter > 1:
-            app_manager._stop_app_event.set()
-        else:
-            app_manager._force_run_event.set()
-
-    mock_task_executor.execute.side_effect = side_effect
-
-    # Act
-    await app_manager._periodic_wrapper()
-
-    # Assert
-    assert mock_task_executor.execute.await_count == 2
-
-
-@pytest.mark.asyncio
-async def test_run(app_manager: AppManager, mock_managers: list[AsyncMock], mock_task_executor: AsyncMock):
-    """Test the main run method."""
+    """Test the main run method emits start and stop events."""
 
     # Arrange
     async def stop_app(*args: Any, **kwargs: Any) -> None:
         app_manager._stop_app_event.set()
 
-    # Stop the app after the first periodic wrap
-    app_manager._periodic_wrapper = AsyncMock(side_effect=stop_app)
+    for manager in mock_managers:
+        manager.__aenter__ = AsyncMock(return_value=manager)
+        manager.__aexit__ = AsyncMock(return_value=None)
+
+    original_run = app_manager._periodic_task_scheduler
+
+    async def stop_after_setup(*args: Any, **kwargs: Any) -> None:
+        app_manager._stop_app_event.set()
+        await original_run()
+
+    app_manager._periodic_task_scheduler = AsyncMock(side_effect=stop_after_setup)
 
     # Act
     await app_manager.run()
 
     # Assert
+    assert any(isinstance(call.args[0], AppStartEvent) for call in mock_event_manager.emit.await_args_list)
+    assert any(isinstance(call.args[0], AppStopEvent) for call in mock_event_manager.emit.await_args_list)
+
     for manager in mock_managers:
         manager.set_shutdown_event.assert_called_once()
         manager.setup.assert_awaited_once()
         manager.update_config.assert_awaited_once()
 
     mock_task_executor.set_shutdown_event.assert_called_once()
-    app_manager._periodic_wrapper.assert_awaited_once()
 
 
 @pytest.mark.asyncio
-async def test_run_with_signal(app_manager: AppManager):
-    """Test that the run method is stopped by a signal."""
+async def test_input_watcher_emits_user_input_event(app_manager: AppManager, mock_event_manager: AsyncMock):
+    """Test the input watcher emits user input events."""
     # Arrange
-    with patch("signal.signal") as mock_signal, patch("asyncio.get_running_loop") as mock_get_loop:
+    input_text = "test command"
+
+    with patch("aioconsole.ainput", new_callable=AsyncMock) as mock_ainput:
+        mock_ainput.side_effect = [input_text, asyncio.CancelledError()]  # Stop after one input
+
+        # Act
+        await app_manager._input_watcher()
+
+        # Assert
+        assert mock_ainput.await_count == 2
+        mock_event_manager.emit.assert_awaited_once()
+        emitted_event = mock_event_manager.emit.await_args.args[0]
+        assert isinstance(emitted_event, UserInputReceivedEvent)
+        assert emitted_event.data.get("command") == input_text
+
+
+@pytest.mark.asyncio
+async def test_input_watcher_health_command_emits_health_event(app_manager: AppManager, mock_event_manager: AsyncMock):
+    """Test the input watcher for health command emits health check event."""
+    # Arrange
+    with patch("aioconsole.ainput", new_callable=AsyncMock) as mock_ainput:
+        mock_ainput.side_effect = ["health", asyncio.CancelledError()]  # Stop after one input
+
+        # Act
+        await app_manager._input_watcher()
+
+        # Assert
+        mock_event_manager.emit.assert_awaited_once()
+        emitted_event = mock_event_manager.emit.await_args.args[0]
+        assert isinstance(emitted_event, UserInputReceivedEvent)
+
+
+@pytest.mark.asyncio
+async def test_handle_task_execution_request_calls_executor(
+    app_manager: AppManager, mock_task_executor: AsyncMock, mock_settings_manager: MagicMock
+):
+    """Test the task execution request handler calls the task executor."""
+    # Arrange
+    mock_settings_manager.get_settings.return_value = MagicMock()
+
+    # Act
+    event = TaskExecutionRequestEvent()
+    await app_manager._handle_task_execution_request(event)
+
+    # Assert
+    mock_task_executor.execute.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_periodic_task_scheduler_emits_task_execution_event(
+    app_manager: AppManager, mock_event_manager: AsyncMock
+):
+    """Test the periodic task scheduler emits task execution events."""
+    # Arrange
+    with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+        mock_sleep.side_effect = lambda _: app_manager._stop_app_event.set()
+
+        # Act
+        await app_manager._periodic_task_scheduler()
+
+        # Assert
+        mock_event_manager.emit.assert_awaited_once()
+        emitted_event = mock_event_manager.emit.await_args.args[0]
+        assert isinstance(emitted_event, TaskExecutionRequestEvent)
+
+
+@pytest.mark.asyncio
+async def test_handle_user_input_health_emits_health_event(app_manager: AppManager, mock_event_manager: AsyncMock):
+    """Test that health command in user input handler emits health check event."""
+    # Act
+    event = UserInputReceivedEvent("health")
+    await app_manager._handle_user_input(event)
+
+    # Assert
+    mock_event_manager.emit.assert_awaited_once()
+    emitted_event = mock_event_manager.emit.await_args.args[0]
+    assert isinstance(emitted_event, HealthCheckRequestEvent)
+
+
+@pytest.mark.asyncio
+async def test_handle_user_input_force_execution(app_manager: AppManager, mock_event_manager: AsyncMock):
+    """Test that non-health command in user input handler emits task execution event."""
+    # Act
+    event = UserInputReceivedEvent("any_other_command")
+    await app_manager._handle_user_input(event)
+
+    # Assert
+    mock_event_manager.emit.assert_awaited_once()
+    emitted_event = mock_event_manager.emit.await_args.args[0]
+    assert isinstance(emitted_event, TaskExecutionRequestEvent)
+    assert emitted_event.data.get("force") is True
+
+
+@pytest.mark.asyncio
+async def test_handle_task_execution_cancelled(
+    app_manager: AppManager, mock_task_executor: AsyncMock, mock_event_manager: AsyncMock
+):
+    """Test the task execution handler when the task is cancelled."""
+    # Arrange
+    mock_task_executor.execute.side_effect = asyncio.CancelledError()
+
+    # Act
+    event = TaskExecutionRequestEvent()
+    await app_manager._handle_task_execution_request(event)
+
+    # Assert
+    mock_event_manager.emit.assert_awaited_once()
+    emitted_event = mock_event_manager.emit.await_args.args[0]
+    assert isinstance(emitted_event, TaskExecutionCompleteEvent)
+    assert not emitted_event.data["success"]
+    assert emitted_event.data["error"] == "Cancelled"
+
+
+@pytest.mark.asyncio
+async def test_handle_task_execution_exception(
+    app_manager: AppManager, mock_task_executor: AsyncMock, mock_event_manager: AsyncMock
+):
+    """Test the task execution handler with an exception."""
+    # Arrange
+    mock_task_executor.execute.side_effect = Exception("Test error")
+
+    # Act
+    event = TaskExecutionRequestEvent()
+    await app_manager._handle_task_execution_request(event)
+
+    # Assert
+    mock_event_manager.emit.assert_awaited_once()
+    emitted_event = mock_event_manager.emit.await_args.args[0]
+    assert isinstance(emitted_event, TaskExecutionCompleteEvent)
+    assert not emitted_event.data["success"]
+    assert emitted_event.data["error"] == "Test error"
+
+
+@pytest.mark.asyncio
+async def test_input_watcher_exception(app_manager: AppManager):
+    """Test the input watcher with an unexpected exception."""
+    with (
+        patch("aioconsole.ainput", new_callable=AsyncMock) as mock_ainput,
+        patch("src.reposter.core.app_manager.log") as mock_log,
+    ):
+        mock_ainput.side_effect = [Exception("Test exception"), asyncio.CancelledError()]
+
+        await app_manager._input_watcher()
+
+        mock_log.assert_any_call("⚠️ Ошибка в input_watcher: Exception: Test exception")
+
+
+@pytest.mark.asyncio
+async def test_periodic_task_scheduler_exception(app_manager: AppManager):
+    """Test the periodic task scheduler with an exception."""
+    with (
+        patch.object(app_manager, "_event_manager", new=AsyncMock()) as mock_event_manager,
+        patch("src.reposter.core.app_manager.log") as mock_log,
+        patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
+    ):
+        mock_event_manager.emit.side_effect = Exception("Test exception")
+        mock_sleep.side_effect = lambda _: app_manager._stop_app_event.set()
+
+        await app_manager._periodic_task_scheduler()
+
+        mock_log.assert_any_call("⚠️ Ошибка в планировщике периодических задач: Exception: Test exception")
+
+
+def test_shutdown_handler(app_manager: AppManager):
+    """Test the shutdown handler sets the stop event."""
+    with patch("asyncio.get_running_loop") as mock_get_loop:
         mock_loop = MagicMock()
         mock_get_loop.return_value = mock_loop
 
-        # Act
-        app_manager._setup_signal_handlers()
+        app_manager._shutdown_handler(0, None)
 
-        # Assert
-        assert mock_signal.call_count >= 1
-
-        # Simulate a signal
-        app_manager._shutdown_handler(signal.SIGINT, None)
         mock_loop.call_soon_threadsafe.assert_called_once_with(app_manager._stop_app_event.set)
 
 
-@pytest.fixture(autouse=True)
-def mock_log_fixture() -> MagicMock:
-    """Fixture for mocking log."""
-    with patch("src.reposter.core.app_manager.log") as mock_log:
-        yield mock_log
-
-
 @pytest.mark.asyncio
-async def test_execute_task_exception_when_stopped(
-    app_manager: AppManager, mock_task_executor: AsyncMock, mock_log_fixture: MagicMock
-):
-    """Test that exception in task is not logged when app is stopped."""
+async def test_run_registers_health_checks(app_manager: AppManager, mock_managers: list[AsyncMock]):
+    """Test that the run method registers health checks for all managers."""
     # Arrange
-    app_manager._stop_app_event.set()
-    mock_task_executor.execute.side_effect = Exception("Test exception")
+    app_manager._periodic_task_scheduler = AsyncMock(side_effect=lambda: app_manager._stop_app_event.set())
+    for manager in mock_managers:
+        manager.__aenter__ = AsyncMock(return_value=manager)
+        manager.__aexit__ = AsyncMock(return_value=None)
 
-    # Act
-    await app_manager._execute_task()
-
-    # Assert
-    mock_log_fixture.assert_not_called()
-
-
-@pytest.mark.asyncio
-async def test_input_watcher_exception(app_manager: AppManager, mock_log_fixture: MagicMock):
-    """Test the input watcher with an unexpected exception."""
-    # Arrange
-    with patch("aioconsole.ainput", new_callable=AsyncMock) as mock_ainput:
-        mock_ainput.side_effect = [Exception("Test exception"), asyncio.CancelledError()]
-
+    with patch.object(app_manager, "_health_monitor") as mock_health_monitor:
         # Act
-        await app_manager._input_watcher()
+        await app_manager.run()
 
         # Assert
-        mock_log_fixture.assert_any_call("⚠️ Ошибка в input_watcher: Exception: Test exception")
+        assert mock_health_monitor.register_check.call_count == len(mock_managers)
+        mock_health_monitor.register_check.assert_has_calls(
+            [
+                call("VK", mock_managers[0].health_check),
+                call("Telegram", mock_managers[1].health_check),
+                call("Boosty", mock_managers[2].health_check),
+            ]
+        )
 
 
 @pytest.mark.asyncio
-async def test_input_watcher_exception_when_stopped(app_manager: AppManager, mock_log_fixture: MagicMock):
-    """Test that exception in input watcher is not logged when app is stopped."""
-    # Arrange
-    app_manager._stop_app_event.set()
-    with patch("aioconsole.ainput", new_callable=AsyncMock) as mock_ainput:
-        mock_ainput.side_effect = Exception("Test exception")
+async def test_handle_health_check_request(app_manager: AppManager):
+    """Test the health check request handler."""
+    with (
+        patch.object(app_manager, "_health_monitor", new=AsyncMock()) as mock_health_monitor,
+        patch("src.reposter.core.app_manager.log") as mock_log,
+    ):
+        mock_health_monitor.check_health.return_value = {
+            "VK": {"status": "ok", "message": "OK"},
+            "Telegram": {"status": "error", "message": "Failed"},
+        }
 
-        # Act
-        await app_manager._input_watcher()
+        await app_manager._handle_health_check_request(HealthCheckRequestEvent())
 
-        # Assert
-        mock_log_fixture.assert_not_called()
-
-
-@pytest.mark.asyncio
-async def test_periodic_wrapper_stop_during_wait(app_manager: AppManager, mock_log_fixture: MagicMock):
-    """Test that the periodic wrapper stops during wait."""
-    # Arrange
-    original_wait = asyncio.wait
-
-    async def wait_side_effect(  # noqa: ASYNC109
-        fs: Any,
-        timeout: float | None,  # noqa: ASYNC109
-        return_when: Any,
-    ) -> tuple[set[asyncio.Task[Any]], set[asyncio.Task[Any]]]:  # noqa: ASYNC109
-        app_manager._stop_app_event.set()
-        done, pending = await original_wait(fs, timeout=timeout, return_when=return_when)
-        for task in pending:
-            task.cancel()
-        return done, pending
-
-    with patch("asyncio.wait", side_effect=wait_side_effect):
-        # Act
-        await app_manager._periodic_wrapper()
-
-        # Assert
-        mock_log_fixture.assert_any_call("⏹️  Остановка — прерываю ожидание.")
-
-
-@pytest.mark.asyncio
-async def test_periodic_wrapper_wait_exception(app_manager: AppManager, mock_log_fixture: MagicMock):
-    """Test exception during wait in periodic wrapper."""
-    # Arrange
-    call_count = 0
-
-    async def execute_side_effect(*args: Any, **kwargs: Any) -> None:
-        nonlocal call_count
-        call_count += 1
-        if call_count > 1:
-            app_manager._stop_app_event.set()
-
-    app_manager._execute_task = AsyncMock(side_effect=execute_side_effect)
-
-    with patch("asyncio.wait", side_effect=Exception("Wait error")):
-        # Act
-        await app_manager._periodic_wrapper()
-
-        # Assert
-        mock_log_fixture.assert_any_call("⚠️ Ошибка в ожидании: Wait error")
-
-
-@pytest.mark.asyncio
-async def test_periodic_wrapper_task_exception(app_manager: AppManager, mock_log_fixture: MagicMock):
-    """Test exception in the periodic task itself."""
-    # Arrange
-    app_manager._stop_app_event.set()
-    app_manager._execute_task = AsyncMock(side_effect=Exception("Task error"))
-
-    # Act
-    await app_manager._periodic_wrapper()
-
-    # Assert
-    mock_log_fixture.assert_not_called()
-
-
-@pytest.mark.asyncio
-async def test_run_task_group_exception_does_not_log_when_stopping(
-    app_manager: AppManager, mock_log_fixture: MagicMock
-):
-    """Test that exception in task group is not logged when app is stopping."""
-    # Arrange
-    exception_raised = asyncio.Event()
-
-    async def raise_exception_and_set_event(*args: Any, **kwargs: Any) -> None:
-        try:
-            raise Exception("Task group error")
-        finally:
-            exception_raised.set()
-
-    app_manager._input_watcher = AsyncMock(side_effect=raise_exception_and_set_event)
-
-    async def stop_after_exception(*args: Any, **kwargs: Any) -> None:
-        await exception_raised.wait()
-        app_manager._stop_app_event.set()
-
-    app_manager._periodic_wrapper = AsyncMock(side_effect=stop_after_exception)
-
-    # Act
-    await app_manager.run()
-
-    # Assert
-    # The log should not be called because the stop event is set
-    for call_args in mock_log_fixture.call_args_list:
-        assert "Перехвачено исключение в задаче" not in call_args[0][0]
-        assert "Возвращаюсь в режим ожидания..." not in call_args[0][0]
-
-
-def test_setup_signal_handlers_non_windows(app_manager: AppManager) -> None:
-    """Test signal handlers setup on non-Windows platforms."""
-    # Arrange
-    with patch("signal.signal") as mock_signal, patch("sys.platform", "linux"):
-        # Act
-        app_manager._setup_signal_handlers()
-
-        # Assert
-        mock_signal.assert_any_call(signal.SIGTERM, app_manager._shutdown_handler)
-
-
-@pytest.mark.asyncio
-async def test_periodic_wrapper_force_run_clears_event(app_manager: AppManager, mock_task_executor: AsyncMock):
-    """Test that the periodic wrapper clears the force run event."""
-    # Arrange
-    counter = 0
-
-    async def side_effect(*args: Any, **kwargs: Any) -> None:
-        nonlocal counter
-        counter += 1
-        if counter > 1:
-            app_manager._stop_app_event.set()
-        else:
-            app_manager._force_run_event.set()
-
-    mock_task_executor.execute.side_effect = side_effect
-
-    # Act
-    await app_manager._periodic_wrapper()
-
-    # Assert
-    assert not app_manager._force_run_event.is_set()
-
-
-@pytest.mark.asyncio
-async def test_input_watcher_eof_breaks_loop(app_manager: AppManager):
-    """Test that the input watcher loop breaks on EOFError."""
-    # Arrange
-    with patch("aioconsole.ainput", new_callable=AsyncMock) as mock_ainput:
-        mock_ainput.side_effect = [EOFError(), "some other input"]
-
-        # Act
-        await app_manager._input_watcher()
-
-        # Assert
-        mock_ainput.assert_called_once()
-
-
-@pytest.mark.asyncio
-async def test_periodic_wrapper_task_exception_no_stop(app_manager: AppManager, mock_log_fixture: MagicMock):
-    """Test exception in the periodic task itself when not stopping."""
-    # Arrange
-    app_manager._execute_task = AsyncMock(side_effect=Exception("Task error"))
-
-    async def stop_loop(*args: Any, **kwargs: Any) -> None:
-        app_manager._stop_app_event.set()
-
-    with patch("asyncio.sleep", side_effect=stop_loop) as mock_sleep:
-        # Act
-        await app_manager._periodic_wrapper()
-
-        # Assert
-        mock_log_fixture.assert_any_call("⚠️ Ошибка в периодической задаче: Exception: Task error")
-        mock_sleep.assert_awaited_with(1)
-
-
-@pytest.mark.asyncio
-async def test_run_task_group_exception_logs_when_not_stopping(
-    app_manager: AppManager, mock_log_fixture: MagicMock, mock_managers: list[AsyncMock]
-):
-    """Test that exception in task group is logged when app is not stopping."""
-    # Arrange
-    app_manager._input_watcher = AsyncMock(side_effect=Exception("Task group error"))
-
-    call_count = 0
-
-    async def stop_app_after_a_bit(*args: Any, **kwargs: Any) -> None:
-        nonlocal call_count
-        call_count += 1
-        if call_count > 1:
-            app_manager._stop_app_event.set()
-
-    app_manager._periodic_wrapper = AsyncMock(side_effect=stop_app_after_a_bit)
-
-    # Act
-    await app_manager.run()
-
-    # Assert
-    mock_log_fixture.assert_any_call("💥 Перехвачено исключение в задаче: Exception: Task group error")
-    mock_log_fixture.assert_any_call("🔄 Возвращаюсь в режим ожидания...")
-    assert mock_managers[0].update_config.call_count > 1
-
-
-@pytest.mark.asyncio
-async def test_input_watcher_health(app_manager: AppManager):
-    """Test the input watcher when 'health' is typed."""
-    # Arrange
-    app_manager.check_health = AsyncMock()
-
-    with patch("aioconsole.ainput", new_callable=AsyncMock) as mock_ainput:
-        mock_ainput.side_effect = ["health", asyncio.CancelledError()]
-
-        # Act
-        await app_manager._input_watcher()
-
-        # Assert
-        app_manager.check_health.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-async def test_check_health(app_manager: AppManager, mock_log_fixture: MagicMock):
-    """Test the check_health method."""
-    # Arrange
-    health_results = {
-        "VK": {"status": "ok"},
-        "Telegram": {"status": "error", "message": "Connection failed"},
-    }
-    app_manager._health_monitor.check_health = AsyncMock(return_value=health_results)
-
-    # Act
-    await app_manager.check_health()
-
-    # Assert
-    app_manager._health_monitor.check_health.assert_awaited_once()
-    mock_log_fixture.assert_any_call("🩺 Результаты проверки состояния:", padding_top=1)
-    mock_log_fixture.assert_any_call("  - VK: OK (No message)")
-    mock_log_fixture.assert_any_call("  - Telegram: ERROR (Connection failed)")
+        mock_health_monitor.check_health.assert_awaited_once()
+        mock_log.assert_any_call("  - VK: OK (OK)")
+        mock_log.assert_any_call("  - Telegram: ERROR (Failed)")
