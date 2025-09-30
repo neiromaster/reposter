@@ -6,7 +6,6 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 from _pytest.logging import LogCaptureFixture
-from _pytest.monkeypatch import MonkeyPatch
 
 from src.reposter.config.settings import (
     AppConfig,
