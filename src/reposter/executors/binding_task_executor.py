@@ -119,10 +119,6 @@ class BindingTaskExecutor(BaseTaskExecutor):
                             continue
 
                         try:
-                            if binding.telegram:
-                                log(f"✈️ Публикую пост {post.id} в Telegram каналы...", indent=3, padding_top=1)
-                                await self.telegram_manager.post_to_channels(binding.telegram, [prepared_post])
-
                             if binding.boosty and self.boosty_manager:
                                 log(
                                     f"🚀 Публикую пост {post.id} в Boosty блог {binding.boosty.blog_name}...",
@@ -130,6 +126,10 @@ class BindingTaskExecutor(BaseTaskExecutor):
                                     padding_top=1,
                                 )
                                 await self.boosty_manager.create_post(binding.boosty, prepared_post)
+
+                            if binding.telegram:
+                                log(f"✈️ Публикую пост {post.id} в Telegram каналы...", indent=3, padding_top=1)
+                                await self.telegram_manager.post_to_channels(binding.telegram, [prepared_post])
 
                         except Exception as e:
                             log(f"❌ Не удалось опубликовать пост {post.id}: {e}", indent=4)
