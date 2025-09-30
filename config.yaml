@@ -24,6 +24,7 @@ bindings:
   boosty:
     # Your Boosty blog name (the part after boosty.to/ in the URL)
     blog_name: "my_boosty_blog"
+    subscription_level_id: 122345
 
 - vk:
     # Short name or ID of the community wall to monitor

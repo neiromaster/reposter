@@ -73,14 +73,8 @@ class TestBindingTaskExecutor:
         )
 
     @pytest.mark.asyncio
-    async def test_execute_with_bindings(self, binding_task_executor: BindingTaskExecutor, monkeypatch: MonkeyPatch):
+    async def test_execute_with_bindings(self, binding_task_executor: BindingTaskExecutor, settings: Settings):
         """Test execute with bindings."""
-        # Mock environment variables
-        monkeypatch.setenv("VK_SERVICE_TOKEN", "test_token")
-        monkeypatch.setenv("TELEGRAM_API_ID", "12345")
-        monkeypatch.setenv("TELEGRAM_API_HASH", "test_hash")
-
-        settings = Settings.load()
         settings.bindings = [
             Binding(
                 vk=VKSource(domain="test", post_count=5, post_source="wall"),
@@ -113,15 +107,9 @@ class TestBindingTaskExecutor:
 
     @pytest.mark.asyncio
     async def test_execute_with_shutdown_event_set(
-        self, binding_task_executor: BindingTaskExecutor, monkeypatch: MonkeyPatch
+        self, binding_task_executor: BindingTaskExecutor, settings: Settings
     ):
         """Test execute with shutdown event already set."""
-        # Mock environment variables
-        monkeypatch.setenv("VK_SERVICE_TOKEN", "test_token")
-        monkeypatch.setenv("TELEGRAM_API_ID", "12345")
-        monkeypatch.setenv("TELEGRAM_API_HASH", "test_hash")
-
-        settings = Settings.load()
         settings.bindings = [
             Binding(
                 vk=VKSource(domain="test", post_count=5, post_source="wall"),
@@ -140,8 +128,7 @@ class TestBindingTaskExecutor:
             mock_get_vk_wall.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_execute_with_new_posts(self, binding_task_executor: BindingTaskExecutor, monkeypatch: MonkeyPatch):
-        settings = Settings.load()
+    async def test_execute_with_new_posts(self, binding_task_executor: BindingTaskExecutor, settings: Settings):
         settings.app = AppConfig(state_file=Path("test_state.yaml"))
         settings.bindings = [
             Binding(
@@ -174,16 +161,8 @@ class TestBindingTaskExecutor:
             mock_set_last_post_id.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_execute_with_boosty_target(
-        self, binding_task_executor: BindingTaskExecutor, monkeypatch: MonkeyPatch
-    ):
+    async def test_execute_with_boosty_target(self, binding_task_executor: BindingTaskExecutor, settings: Settings):
         """Test execute with both Telegram and Boosty targets."""
-        # Mock environment variables
-        monkeypatch.setenv("VK_SERVICE_TOKEN", "test_token")
-        monkeypatch.setenv("TELEGRAM_API_ID", "12345")
-        monkeypatch.setenv("TELEGRAM_API_HASH", "test_hash")
-
-        settings = Settings.load()
         settings.app = AppConfig(state_file=Path("test_state.yaml"))
         settings.bindings = [
             Binding(
@@ -217,15 +196,9 @@ class TestBindingTaskExecutor:
 
     @pytest.mark.asyncio
     async def test_execute_with_empty_post_after_processing(
-        self, binding_task_executor: BindingTaskExecutor, monkeypatch: MonkeyPatch
+        self, binding_task_executor: BindingTaskExecutor, settings: Settings
     ):
         """Test execute when a post becomes empty after processing."""
-        # Mock environment variables
-        monkeypatch.setenv("VK_SERVICE_TOKEN", "test_token")
-        monkeypatch.setenv("TELEGRAM_API_ID", "12345")
-        monkeypatch.setenv("TELEGRAM_API_HASH", "test_hash")
-
-        settings = Settings.load()
         settings.app = AppConfig(state_file=Path("test_state.yaml"))
         settings.bindings = [
             Binding(
@@ -262,10 +235,8 @@ class TestBindingTaskExecutor:
         assert binding_task_executor._shutdown_event is event
 
     @pytest.mark.asyncio
-    async def test_execute_no_new_posts(self, binding_task_executor: BindingTaskExecutor, monkeypatch: MonkeyPatch):
+    async def test_execute_no_new_posts(self, binding_task_executor: BindingTaskExecutor, settings: Settings):
         """Test execute when there are no new posts."""
-        monkeypatch.setenv("VK_SERVICE_TOKEN", "test_token")
-        settings = Settings.load()
         settings.bindings = [
             Binding(
                 vk=VKSource(domain="test", post_count=5, post_source="wall"),
@@ -286,11 +257,9 @@ class TestBindingTaskExecutor:
 
     @pytest.mark.asyncio
     async def test_execute_shutdown_during_post_processing(
-        self, binding_task_executor: BindingTaskExecutor, monkeypatch: MonkeyPatch
+        self, binding_task_executor: BindingTaskExecutor, settings: Settings
     ):
         """Test execute with shutdown during post processing."""
-        monkeypatch.setenv("VK_SERVICE_TOKEN", "test_token")
-        settings = Settings.load()
         settings.bindings = [
             Binding(
                 vk=VKSource(domain="test", post_count=5, post_source="wall"),
@@ -321,12 +290,8 @@ class TestBindingTaskExecutor:
             mock_process_post.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_execute_post_processing_fails(
-        self, binding_task_executor: BindingTaskExecutor, monkeypatch: MonkeyPatch
-    ):
+    async def test_execute_post_processing_fails(self, binding_task_executor: BindingTaskExecutor, settings: Settings):
         """Test execute when post processing fails."""
-        monkeypatch.setenv("VK_SERVICE_TOKEN", "test_token")
-        settings = Settings.load()
         settings.bindings = [
             Binding(
                 vk=VKSource(domain="test", post_count=5, post_source="wall"),
@@ -349,10 +314,8 @@ class TestBindingTaskExecutor:
             mock_post_to_channels.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_execute_debug_mode(self, binding_task_executor: BindingTaskExecutor, monkeypatch: MonkeyPatch):
+    async def test_execute_debug_mode(self, binding_task_executor: BindingTaskExecutor, settings: Settings):
         """Test execute in debug mode."""
-        monkeypatch.setenv("VK_SERVICE_TOKEN", "test_token")
-        settings = Settings.load()
         settings.bindings = [
             Binding(
                 vk=VKSource(domain="test", post_count=5, post_source="wall"),
@@ -373,10 +336,8 @@ class TestBindingTaskExecutor:
             mock_save_json.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_execute_get_posts_fails(self, binding_task_executor: BindingTaskExecutor, monkeypatch: MonkeyPatch):
+    async def test_execute_get_posts_fails(self, binding_task_executor: BindingTaskExecutor, settings: Settings):
         """Test execute when getting posts fails."""
-        monkeypatch.setenv("VK_SERVICE_TOKEN", "test_token")
-        settings = Settings.load()
         settings.bindings = [
             Binding(
                 vk=VKSource(domain="test", post_count=5, post_source="wall"),
