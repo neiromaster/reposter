@@ -63,7 +63,7 @@ async def test_tag_extraction_step():
     await step.process(vk_post, prepared_post)
 
     # Assert
-    assert prepared_post.text == "Hello"
+    assert prepared_post.text == "Hello\n#tag1 #tag2"
     assert prepared_post.tags == ["tag1", "tag2"]
 
 

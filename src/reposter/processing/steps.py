@@ -56,7 +56,6 @@ class TagExtractionStep(ProcessingStep):
         tags = extract_tags_from_text(prepared_post.text)
         if tags:
             prepared_post.tags = tags
-            prepared_post.text = "\n".join(prepared_post.text.splitlines()[:-1]).strip()
 
 
 class AttachmentDownloaderStep(ProcessingStep):
