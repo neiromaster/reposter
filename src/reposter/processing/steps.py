@@ -118,7 +118,7 @@ class AttachmentDownloaderStep(ProcessingStep):
             thumbnail_path=thumb_path,
         )
 
-    def _find_best_thumbnail(self, images: list[VkCoverSize], target_ratio: float = 16 / 9) -> VkCoverSize | None:
+    def _find_best_thumbnail(self, images: list[VkCoverSize] | None, target_ratio: float = 16 / 9) -> VkCoverSize | None:
         log("🌟 Выбираю лучшую обложку...", indent=5)
         TARGET = 1280
         if not images:

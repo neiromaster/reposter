@@ -39,12 +39,12 @@ class Video(BaseModel):
     description: str | None = None
     duration: int | None = None
     access_key: str | None = None
-    image: list[CoverSize]
+    image: list[CoverSize] | None = None
 
     @property
-    def max_size_url(self) -> HttpUrl:
+    def max_size_url(self) -> HttpUrl | None:
         if not self.image:
-            raise ValueError("Cover has no sizes")
+            return None
         return max(self.image, key=lambda size: size.width).url
 
     @property
