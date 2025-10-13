@@ -125,7 +125,7 @@ class YTDLPManager(BaseManager):
 
         log(f"🔄 Перезапускаю {browser_name} для обновления cookie...", indent=4)
 
-        for proc in psutil.process_iter(["name"]):  # type: ignore [reportUnknownMemberType, reportUnknownArgumentType]
+        for proc in psutil.process_iter(["name"]):
             if proc.info["name"] == executable:
                 await asyncio.to_thread(proc.kill)
                 await asyncio.to_thread(proc.wait)
@@ -133,7 +133,7 @@ class YTDLPManager(BaseManager):
         await asyncio.to_thread(subprocess.Popen, [executable])
         await asyncio.sleep(self._downloader_config.browser_restart_wait_seconds)
 
-        for proc in psutil.process_iter(["name"]):  # type: ignore [reportUnknownMemberType, reportUnknownArgumentType]
+        for proc in psutil.process_iter(["name"]):
             if proc.info["name"] == executable:
                 await asyncio.to_thread(proc.kill)
                 await asyncio.to_thread(proc.wait)
