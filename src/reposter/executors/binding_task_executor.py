@@ -144,13 +144,13 @@ class BindingTaskExecutor(BaseTaskExecutor):
 
                     except Exception as e:
                         log(
-                            f"❌ Ошибка при обработке поста {post.id}: {e}. Пропускаю пост и иду дальше...",
+                            f"❌ Ошибка при обработке поста {post.id}: {e}. Перехожу к следующей привязке...",
                             indent=3,
                         )
-                        continue
+                        break
 
                 else:
-                    log(f"✅ Привязка {binding.vk.domain} обработана.", indent=2)
+                    log(f"✅ Все новые посты для привязки {binding.vk.domain} обработаны.", indent=2)
 
             except Exception as e:
                 log(f"❌ Критическая ошибка при получении постов для привязки {binding.vk.domain}: {e}", indent=2)
