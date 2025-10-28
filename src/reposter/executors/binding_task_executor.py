@@ -111,6 +111,13 @@ class BindingTaskExecutor(BaseTaskExecutor):
                         log(f"⚙️ Обрабатываю пост {post.id}...", indent=3, padding_top=1)
                         prepared_post = await self.post_processor.process_post(post)
 
+                        if prepared_post is None:
+                            log("⚠️ Пост пропущен по условию.", indent=4)
+                            await set_last_post_id(
+                                binding.vk.domain, post.id, binding.vk.post_source, settings.app.state_file
+                            )
+                            continue
+
                         if not prepared_post.attachments and not prepared_post.text:
                             log("⚠️ Пост пустой после обработки, пропускаю.", indent=4)
                             await set_last_post_id(

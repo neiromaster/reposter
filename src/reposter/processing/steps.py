@@ -3,7 +3,7 @@ from pathlib import Path
 
 from pymediainfo import MediaInfo
 
-from ..exceptions import PostProcessingError
+from ..exceptions import PostProcessingError, SkipPostException
 from ..managers.vk_manager import VKManager
 from ..managers.ytdlp_manager import YTDLPManager
 from ..models import (
@@ -44,6 +44,12 @@ class ProcessingStep(ABC):
     @abstractmethod
     async def process(self, post: VkPost, prepared_post: PreparedPost) -> None:
         pass
+
+
+class SkipPostIfFloppyEmojiStep(ProcessingStep):
+    async def process(self, post: VkPost, prepared_post: PreparedPost) -> None:
+        if "💾" in post.text:
+            raise SkipPostException("Post contains a floppy disk emoji, skipping.")
 
 
 class LinkNormalizationStep(ProcessingStep):

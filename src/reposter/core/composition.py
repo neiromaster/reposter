@@ -10,6 +10,7 @@ from ..processing.steps import (
     AttachmentDownloaderStep,
     AttachmentDtoCreationStep,
     LinkNormalizationStep,
+    SkipPostIfFloppyEmojiStep,
     TagExtractionStep,
 )
 from .app_manager import AppManager
@@ -24,6 +25,7 @@ class DefaultAppComposer(AppComposer):
         boosty_manager = BoostyManager()
 
         processing_steps = [
+            SkipPostIfFloppyEmojiStep(),
             LinkNormalizationStep(),
             TagExtractionStep(),
             AttachmentDownloaderStep(
