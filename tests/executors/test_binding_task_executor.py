@@ -82,7 +82,6 @@ class TestBindingTaskExecutor:
         ]
 
         # Create sample posts
-        old_post = Post(id=1, text="old", date=1000, attachments=[], owner_id=1, from_id=1, is_pinned=None)
         new_post = Post(id=2, text="new", date=2000, attachments=[], owner_id=1, from_id=1, is_pinned=None)
 
         with (
@@ -91,12 +90,19 @@ class TestBindingTaskExecutor:
             patch.object(binding_task_executor.vk_manager, "get_vk_wall") as mock_get_vk_wall,
             patch.object(binding_task_executor.post_processor, "process_post") as mock_process_post,
         ):
-            mock_get_vk_wall.return_value = [old_post, new_post]
+            mock_get_vk_wall.return_value = [new_post]
             prepared_post = PreparedPost(text="processed", attachments=[])
             mock_process_post.return_value = prepared_post
 
             # Execute
             await binding_task_executor.execute(settings)
+
+            mock_get_vk_wall.assert_called_once_with(
+                domain="test",
+                page_size=5,
+                post_source="wall",
+                last_post_id=1,
+            )
 
             # Verify that only the new post was processed (the old one should be skipped)
             mock_process_post.assert_called_once_with(new_post)
@@ -137,7 +143,6 @@ class TestBindingTaskExecutor:
         ]
 
         # Create sample posts
-        old_post = Post(id=1, text="old", date=1000, attachments=[], owner_id=1, from_id=1, is_pinned=None)
         new_post = Post(id=2, text="new", date=2000, attachments=[], owner_id=1, from_id=1, is_pinned=None)
 
         with (
@@ -146,12 +151,19 @@ class TestBindingTaskExecutor:
             patch.object(binding_task_executor.vk_manager, "get_vk_wall") as mock_get_vk_wall,
             patch.object(binding_task_executor.post_processor, "process_post") as mock_process_post,
         ):
-            mock_get_vk_wall.return_value = [old_post, new_post]
+            mock_get_vk_wall.return_value = [new_post]
             prepared_post = PreparedPost(text="processed", attachments=[])
             mock_process_post.return_value = prepared_post
 
             # Execute
             await binding_task_executor.execute(settings)
+
+            mock_get_vk_wall.assert_called_once_with(
+                domain="test",
+                page_size=5,
+                post_source="wall",
+                last_post_id=1,
+            )
 
             # Verify that only the new post was processed
             mock_process_post.assert_called_once_with(new_post)
@@ -248,10 +260,15 @@ class TestBindingTaskExecutor:
             patch.object(binding_task_executor.vk_manager, "get_vk_wall") as mock_get_vk_wall,
             patch.object(binding_task_executor.post_processor, "process_post") as mock_process_post,
         ):
-            mock_get_vk_wall.return_value = [
-                Post(id=1, text="old", date=1000, attachments=[], owner_id=1, from_id=1, is_pinned=None)
-            ]
+            mock_get_vk_wall.return_value = []
             await binding_task_executor.execute(settings)
+
+            mock_get_vk_wall.assert_called_once_with(
+                domain="test",
+                page_size=5,
+                post_source="wall",
+                last_post_id=1,
+            )
             mock_process_post.assert_not_called()
 
     @pytest.mark.asyncio

@@ -202,7 +202,7 @@ async def test_get_vk_wall_success(vk_manager: VKManager, settings: Settings):
 
     respx.get("https://api.vk.ru/method/wall.get").mock(side_effect=side_effect)
 
-    posts = await vk_manager.get_vk_wall("example", 5, "wall")
+    posts = await vk_manager.get_vk_wall("example", page_size=5, post_source="wall", last_post_id=None)
 
     assert len(posts) == 1
     assert isinstance(posts[0], Post)
@@ -219,7 +219,7 @@ async def test_get_vk_wall_with_dont_filter(vk_manager: VKManager, settings: Set
         json=cast(dict[str, object], mock_response)
     )
 
-    await vk_manager.get_vk_wall("example", 5, "donut")
+    await vk_manager.get_vk_wall("example", page_size=5, post_source="donut", last_post_id=None)
 
     # Check that 'filter=donut' was passed
     request: httpx.Request = route.calls[0].request  # type: ignore
@@ -237,7 +237,7 @@ async def test_get_vk_wall_api_error(vk_manager: VKManager, settings: Settings):
     respx.get("https://api.vk.ru/method/wall.get").respond(json=error_response)  # type: ignore[reportUnknownMemberType]
 
     with pytest.raises(VKApiError, match="Access denied"):
-        await vk_manager.get_vk_wall("example", 5, "wall")
+        await vk_manager.get_vk_wall("example", page_size=5, post_source="wall", last_post_id=None)
 
 
 @pytest.mark.asyncio
@@ -248,13 +248,13 @@ async def test_get_vk_wall_empty_response(vk_manager: VKManager, settings: Setti
     respx.get("https://api.vk.ru/method/wall.get").respond(json={})  # type: ignore[reportUnknownMemberType]
 
     with pytest.raises(ValueError, match="VK API response is empty or invalid"):
-        await vk_manager.get_vk_wall("example", 5, "wall")
+        await vk_manager.get_vk_wall("example", page_size=5, post_source="wall", last_post_id=None)
 
 
 @pytest.mark.asyncio
 async def test_get_vk_wall_not_initialized(vk_manager: VKManager):
     with pytest.raises(tenacity.RetryError):
-        await vk_manager.get_vk_wall("example", 5, "wall")
+        await vk_manager.get_vk_wall("example", page_size=5, post_source="wall", last_post_id=None)
 
 
 @pytest.mark.asyncio
@@ -295,7 +295,7 @@ async def test_get_vk_wall_donut_no_user_token(vk_manager: VKManager, settings: 
     await vk_manager.setup(settings)
 
     with pytest.raises(ValueError, match="User token is required for donut posts."):
-        await vk_manager.get_vk_wall("example", 5, "donut")
+        await vk_manager.get_vk_wall("example", page_size=5, post_source="donut", last_post_id=None)
 
 
 @pytest.mark.asyncio
@@ -326,7 +326,7 @@ async def test_get_vk_wall_no_user_token(vk_manager: VKManager, settings: Settin
 
     route = respx.get("https://api.vk.ru/method/wall.get").respond(json=cast(dict[str, object], mock_response))  # type: ignore[reportUnknownMemberType]
 
-    posts = await vk_manager.get_vk_wall("example", 5, "wall")
+    posts = await vk_manager.get_vk_wall("example", page_size=5, post_source="wall", last_post_id=None)
 
     assert len(posts) == 1
     request = route.calls[0].request  # type: ignore[reportUnknownVariableType, reportUnknownMemberType]
@@ -391,7 +391,7 @@ async def test_get_vk_wall_with_user_token_and_mixed_posts(vk_manager: VKManager
 
     respx.get("https://api.vk.ru/method/wall.get").mock(side_effect=side_effect)
 
-    posts = await vk_manager.get_vk_wall("example", 5, "wall")
+    posts = await vk_manager.get_vk_wall("example", page_size=5, post_source="wall", last_post_id=None)
 
     assert len(posts) == 1
     assert posts[0].id == 123
@@ -474,9 +474,62 @@ async def test_get_vk_wall_fallback_on_donut_access_error(vk_manager: VKManager,
 
     respx.get("https://api.vk.ru/method/wall.get").mock(side_effect=side_effect)
 
-    posts = await vk_manager.get_vk_wall("example", 5, "wall")
+    posts = await vk_manager.get_vk_wall("example", page_size=5, post_source="wall", last_post_id=None)
 
     # Expect both posts because filtering was skipped
     assert len(posts) == 2
     assert posts[0].id == 123
     assert posts[1].id == 456
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_vk_wall_pagination_safety_break(
+    vk_manager: VKManager, settings: Settings, capsys: pytest.CaptureFixture
+):
+    """
+    Tests that the pagination loop in get_vk_wall breaks due to the safety limit.
+    """
+    await vk_manager.setup(settings)
+
+    # Mock the VK API to always return a page of posts for "all" filter
+    mock_response_all: VKAPIResponseDict = {
+        "response": {
+            "count": 100,  # Indicate there are more posts
+            "items": [
+                {
+                    "id": i,
+                    "owner_id": -12345,
+                    "from_id": -12345,
+                    "text": f"Post {i}",
+                    "date": 1700000000 + i,
+                    "attachments": [],
+                }
+                for i in range(1, 101)
+            ],
+        }
+    }
+    # Mock the VK API to always return an empty page for "donut" filter
+    mock_response_donut: VKAPIResponseDict = {"response": {"count": 0, "items": []}}
+
+    def side_effect(request: httpx.Request):
+        if request.url.params.get("filter") == "donut":
+            return httpx.Response(json=cast(dict[str, object], mock_response_donut), status_code=200)
+        if request.url.params.get("filter") == "all":
+            return httpx.Response(json=cast(dict[str, object], mock_response_all), status_code=200)
+        return httpx.Response(status_code=404)  # Should not happen in this test
+
+    respx.get("https://api.vk.ru/method/wall.get").mock(side_effect=side_effect)
+
+    page_size = 100
+    last_post_id = 0  # Ensure the loop doesn't stop by finding an old post
+
+    posts = await vk_manager.get_vk_wall("example", page_size=page_size, post_source="wall", last_post_id=last_post_id)
+
+    # The safety break is at offset > 2000, which means 21 pages of 100 posts.
+    # So, it should fetch 21 pages, resulting in 2100 posts.
+    assert len(posts) == 2100
+
+    # Check that the warning message was logged
+    captured = capsys.readouterr()
+    assert "Достигнут лимит пагинации (offset=2100)" in captured.out

@@ -190,7 +190,7 @@ class VKManager(BaseManager):
             log(f"🩺 [VK] Ошибка: {e}", indent=1)
             return {"status": "error", "message": str(e)}
 
-    async def get_vk_wall(self, domain: str, post_count: int, post_source: str) -> list[Post]:
+    async def get_vk_wall(self, domain: str, page_size: int, post_source: str, last_post_id: int | None) -> list[Post]:
         """Requests posts from a VK wall (or Donut) with retry and cancellation."""
 
         @retry(
@@ -200,7 +200,7 @@ class VKManager(BaseManager):
             before_sleep=self._before_sleep,
             retry_error_cls=RetryError,
         )
-        async def _get_wall_posts(params: dict[str, Any]) -> list[Post]:
+        async def _get_wall_posts_page(params: dict[str, Any]) -> list[Post]:
             if self._client is None:
                 raise RuntimeError("Client not initialized. Call setup() first.")
 
@@ -215,8 +215,43 @@ class VKManager(BaseManager):
             if not response_data:
                 raise ValueError("VK API response is empty or invalid.")
 
-            posts = WallGetResponse.model_validate(response_data).items
-            return posts
+            return WallGetResponse.model_validate(response_data).items
+
+        async def _get_all_new_posts(base_params: dict[str, Any]) -> list[Post]:
+            all_new_posts: list[Post] = []
+            offset = 0
+            while True:
+                self._check_shutdown()
+                params = {**base_params, "offset": offset, "count": page_size}
+                page_posts = await _get_wall_posts_page(params)
+
+                if not page_posts:
+                    break
+
+                if last_post_id is None:
+                    all_new_posts.extend(page_posts)
+                    break
+
+                found_old_post = False
+                for post in page_posts:
+                    if post.id <= last_post_id:
+                        found_old_post = True
+                    else:
+                        all_new_posts.append(post)
+
+                if found_old_post:
+                    break
+
+                offset += page_size
+
+                if offset > 2000:
+                    log(
+                        f"⚠️ [VK] Достигнут лимит пагинации ({offset=}). Прерываю, чтобы избежать бесконечного цикла.",
+                        indent=1,
+                    )
+                    break
+
+            return [post for post in all_new_posts if last_post_id is None or post.id > last_post_id]
 
         if post_source == "donut":
             if not self._user_token:
@@ -225,30 +260,28 @@ class VKManager(BaseManager):
             log(f"🔍 [VK] Собираю посты из VK Donut: {domain}...", indent=1)
             params = {
                 "domain": domain,
-                "count": post_count,
                 "access_token": self._user_token,
                 "v": "5.199",
                 "filter": "donut",
             }
-            return await _get_wall_posts(params)
+            return await _get_all_new_posts(params)
 
         # post_source == "wall"
         if self._user_token:
             log(f"🔍 [VK] Собираю посты со стены (с фильтрацией Donut): {domain}...", indent=1)
             base_params = {
                 "domain": domain,
-                "count": post_count,
                 "access_token": self._user_token,
                 "v": "5.199",
             }
 
-            all_posts = await _get_wall_posts({**base_params, "filter": "all"})
+            all_posts = await _get_all_new_posts({**base_params, "filter": "all"})
 
             try:
-                donut_posts = await _get_wall_posts({**base_params, "filter": "donut"})
+                donut_posts = await _get_all_new_posts({**base_params, "filter": "donut"})
                 donut_ids = {p.id for p in donut_posts}
                 return [post for post in all_posts if post.id not in donut_ids]
-            except VKApiError as e:
+            except (VKApiError, ValueError) as e:
                 if "no access to donuts" in str(e):
                     log(
                         "⚠️ [VK] Нет доступа к донатным постам, невозможно отфильтровать. "
@@ -263,8 +296,7 @@ class VKManager(BaseManager):
             log(f"🔍 [VK] Собираю посты со стены: {domain}...", indent=1)
             params = {
                 "domain": domain,
-                "count": post_count,
                 "access_token": self._service_token,
                 "v": "5.199",
             }
-            return await _get_wall_posts(params)
+            return await _get_all_new_posts(params)

@@ -87,11 +87,12 @@ class BindingTaskExecutor(BaseTaskExecutor):
 
                 posts = await self.vk_manager.get_vk_wall(
                     domain=binding.vk.domain,
-                    post_count=binding.vk.post_count,
+                    page_size=binding.vk.post_count,
                     post_source=binding.vk.post_source,
+                    last_post_id=last_post_id,
                 )
 
-                new_posts = sorted([post for post in posts if post.id > last_post_id], key=lambda p: p.date)
+                new_posts = sorted(posts, key=lambda p: p.date)
 
                 if not new_posts:
                     log("✅ Новых постов нет.", indent=2)
