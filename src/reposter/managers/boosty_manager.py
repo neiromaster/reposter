@@ -248,6 +248,7 @@ class BoostyManager(BaseManager):
         finish_response = await self._make_request_with_retries("post", finish_url)
 
         video_data = finish_response.json()
+        video_data["type"] = "ok_video"
         log(f"📥 [Boosty] Загрузка завершена. Итоговый ID видео: {video_data.get('id')}", indent=4)
 
         return video_data
@@ -285,11 +286,7 @@ class BoostyManager(BaseManager):
                 #     )
                 content_blocks.append({"content": "", "type": "text", "modificator": "BLOCK_END"})
 
-                teaser_text = (post_title)[:150]
-                teaser_blocks = [
-                    {"type": "text", "modificator": "", "content": json.dumps([teaser_text, "unstyled", []])},
-                    {"content": "", "type": "text", "modificator": "BLOCK_END"},
-                ]
+                teaser_blocks = []
 
                 form_data: dict[str, Any] = {
                     "title": post_title,
