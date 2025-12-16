@@ -3,6 +3,7 @@ import asyncio
 import json
 import tempfile
 from pathlib import Path
+from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
 
 import httpx
@@ -488,18 +489,38 @@ async def test_create_post_success(boosty_manager: BoostyManager, settings: Sett
     )
     post = PreparedPost(text="Test post", attachments=[attachment], tags=["tag1"])
 
-    mock_video_data = {"id": "test_video_id"}
-    mock_publish_response = {"data": {"post": {"id": "12345"}}}
+    mock_video_data: dict[str, Any] = {"id": "test_video_id"}
+    mock_draft_response: dict[str, Any] = {}  # Empty response for draft creation is fine
+    mock_publish_response: dict[str, Any] = {"data": {"post": {"id": "12345"}}}
+
+    boosty_manager._blog_name = boosty_config.blog_name
 
     with (
         patch.object(boosty_manager, "_authorize", new_callable=AsyncMock),
         patch.object(boosty_manager, "upload_video", new_callable=AsyncMock, return_value=mock_video_data),
         patch.object(boosty_manager, "_make_request_with_retries", new_callable=AsyncMock) as mock_make_request,
     ):
-        mock_make_request.return_value = AsyncMock(spec=httpx.Response, json=lambda: mock_publish_response)
+        # Set up side effects for the two calls
+        mock_make_request.side_effect = [
+            AsyncMock(spec=httpx.Response, status_code=200, json=lambda: mock_draft_response),  # Draft creation
+            AsyncMock(spec=httpx.Response, status_code=200, json=lambda: mock_publish_response),  # Publish
+        ]
 
         results = await boosty_manager.create_post(boosty_config, post)
 
         assert len(results) == 1
         assert results[0] == mock_publish_response
-        mock_make_request.assert_awaited_once()
+        assert mock_make_request.await_count == 2
+
+        # Verify the calls
+        # First call: PUT to create draft
+        first_call_args, first_call_kwargs = mock_make_request.await_args_list[0]
+        assert first_call_args[0] == "put"
+        assert f"/v1/blog/{boosty_config.blog_name}/post_draft" in first_call_args[1]
+        assert "data" in first_call_kwargs
+
+        # Second call: POST to publish
+        second_call_args, second_call_kwargs = mock_make_request.await_args_list[1]
+        assert second_call_args[0] == "post"
+        assert f"/v1/blog/{boosty_config.blog_name}/publish/" in second_call_args[1]
+        assert "data" not in second_call_kwargs
