@@ -522,5 +522,5 @@ async def test_create_post_success(boosty_manager: BoostyManager, settings: Sett
         # Second call: POST to publish
         second_call_args, second_call_kwargs = mock_make_request.await_args_list[1]
         assert second_call_args[0] == "post"
-        assert f"/v1/blog/{boosty_config.blog_name}/publish/" in second_call_args[1]
+        assert f"/v1/blog/{boosty_config.blog_name}/post_draft/publish/" in second_call_args[1]
         assert "data" not in second_call_kwargs

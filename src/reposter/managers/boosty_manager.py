@@ -308,7 +308,7 @@ class BoostyManager(BaseManager):
 
                 await self._make_request_with_retries("put", draft_url, data=form_data)
 
-                publish_url = urljoin(self.BASE_URL, f"/v1/blog/{self._blog_name}/publish/")
+                publish_url = urljoin(self.BASE_URL, f"/v1/blog/{self._blog_name}/post_draft/publish/")
                 log("📤 [Boosty] Публикация черновика...", indent=3)
                 publish_response = await self._make_request_with_retries("post", publish_url)
 
