@@ -302,13 +302,17 @@ class BoostyManager(BaseManager):
                 else:
                     form_data["price"] = 0
 
-                publish_url = urljoin(self.BASE_URL, f"/v1/blog/{self._blog_name}/post_draft/publish/")
+                draft_url = urljoin(self.BASE_URL, f"/v1/blog/{self._blog_name}/post_draft")
 
-                log(f"📤 [Boosty] Публикация поста '{post_title}'...", indent=3)
+                log(f"📤 [Boosty] Создание черновика поста '{post_title}'...", indent=3)
 
-                response = await self._make_request_with_retries("post", publish_url, data=form_data)
+                await self._make_request_with_retries("put", draft_url, data=form_data)
 
-                result = response.json()
+                publish_url = urljoin(self.BASE_URL, f"/v1/blog/{self._blog_name}/publish/")
+                log("📤 [Boosty] Публикация черновика...", indent=3)
+                publish_response = await self._make_request_with_retries("post", publish_url)
+
+                result = publish_response.json()
                 post_data = result.get("data", {}).get("post", {})
                 post_id = post_data.get("id")
                 post_url = (
