@@ -7,37 +7,39 @@ app:
   # Name of the session file for the Telegram user account
   session_name: "user_session"
 
-# A list of VK to Telegram/Boosty bindings
+# VK to Telegram/Boosty bindings with names
 bindings:
-- vk:
-    # Short name or ID of the community wall to monitor
-    domain: "somegroup"
-    # Number of posts to fetch in each check
-    post_count: 10
-    # Source of posts: "wall" for public posts, "donut" for VK Donut posts
-    post_source: "wall"
-  telegram:
-    # List of your channel usernames (e.g., @channel_name) or numeric IDs
-    channel_ids:
-    - "@firstid"
-    - "@secondid"
-  boosty:
-    # Your Boosty blog name (the part after boosty.to/ in the URL)
-    blog_name: "my_boosty_blog"
-    subscription_level_id: 122345
+  main_blog:
+    vk:
+      # Short name or ID of the community wall to monitor
+      domain: "somegroup"
+      # Number of posts to fetch in each check
+      post_count: 10
+      # Source of posts: "wall" for public posts, "donut" for VK Donut posts
+      post_source: "wall"
+    telegram:
+      # List of your channel usernames (e.g., @channel_name) or numeric IDs
+      channel_ids:
+      - "@firstid"
+      - "@secondid"
+    boosty:
+      # Your Boosty blog name (the part after boosty.to/ in the URL)
+      blog_name: "my_boosty_blog"
+      subscription_level_id: 122345
 
-- vk:
-    # Short name or ID of the community wall to monitor
-    domain: "somesecondgroup"
-    # Number of posts to fetch in each check
-    post_count: 10
-    # Source of posts: "wall" for public posts, "donut" for VK Donut posts
-    post_source: "donut"
-  telegram:
-    # List of your channel usernames (e.g., @channel_name) or numeric IDs
-    channel_ids:
-    - "@secondid1"
-    - "@secondid2"
+  secondary_blog:
+    vk:
+      # Short name or ID of the community wall to monitor
+      domain: "somesecondgroup"
+      # Number of posts to fetch in each check
+      post_count: 10
+      # Source of posts: "wall" for public posts, "donut" for VK Donut posts
+      post_source: "donut"
+    telegram:
+      # List of your channel usernames (e.g., @channel_name) or numeric IDs
+      channel_ids:
+      - "@secondid1"
+      - "@secondid2"
 
 # Video downloader settings
 downloader:

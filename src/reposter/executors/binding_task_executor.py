@@ -61,7 +61,7 @@ class BindingTaskExecutor(BaseTaskExecutor):
     async def execute(self, settings: Settings) -> None:
         log(f"📋 Обрабатываю {len(settings.bindings)} привязок...")
 
-        for binding in settings.bindings:
+        for binding_name, binding in settings.bindings.items():
             if self._shutdown_event and self._shutdown_event.is_set():
                 log("⏹️  Остановка — прерываю обработку привязок.", indent=1)
                 break
@@ -76,13 +76,13 @@ class BindingTaskExecutor(BaseTaskExecutor):
 
             log(
                 f"🔄 {datetime.now().strftime('%H:%M:%S %Y-%m-%d')} "
-                f"Обрабатываю привязку: {binding.vk.domain} → {target_description}",
+                f"Обрабатываю привязку '{binding_name}': {binding.vk.domain} → {target_description}",
                 padding_top=1,
             )
 
             try:
                 last_post_id = await get_last_post_id(
-                    binding.vk.domain, binding.vk.post_source, settings.app.state_file
+                    binding_name, binding.vk.domain, binding.vk.post_source, settings.app.state_file
                 )
 
                 posts = await self.vk_manager.get_vk_wall(
@@ -115,14 +115,22 @@ class BindingTaskExecutor(BaseTaskExecutor):
                         if prepared_post is None:
                             log("⚠️ Пост пропущен по условию.", indent=4)
                             await set_last_post_id(
-                                binding.vk.domain, post.id, binding.vk.post_source, settings.app.state_file
+                                binding_name,
+                                binding.vk.domain,
+                                post.id,
+                                binding.vk.post_source,
+                                settings.app.state_file,
                             )
                             continue
 
                         if not prepared_post.attachments and not prepared_post.text:
                             log("⚠️ Пост пустой после обработки, пропускаю.", indent=4)
                             await set_last_post_id(
-                                binding.vk.domain, post.id, binding.vk.post_source, settings.app.state_file
+                                binding_name,
+                                binding.vk.domain,
+                                post.id,
+                                binding.vk.post_source,
+                                settings.app.state_file,
                             )
                             continue
 
@@ -146,7 +154,7 @@ class BindingTaskExecutor(BaseTaskExecutor):
                             await delete_files_async(prepared_post.attachments)
 
                         await set_last_post_id(
-                            binding.vk.domain, post.id, binding.vk.post_source, settings.app.state_file
+                            binding_name, binding.vk.domain, post.id, binding.vk.post_source, settings.app.state_file
                         )
                         log(f"✅ Пост {post.id} успешно обработан и опубликован.", indent=4)
 

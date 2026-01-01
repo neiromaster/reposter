@@ -90,7 +90,7 @@ class Settings(BaseSettings):
     telegram_api_hash: str = Field(..., alias="TELEGRAM_API_HASH")
 
     app: AppConfig = Field(default_factory=AppConfig)
-    bindings: list[BindingConfig]
+    bindings: dict[str, BindingConfig]
     downloader: DownloaderConfig = Field(default_factory=DownloaderConfig)
 
     model_config = SettingsConfigDict(
@@ -171,7 +171,7 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def check_bindings_not_empty(self) -> Settings:
         if not self.bindings:
-            raise ValueError("Список bindings не может быть пустым")
+            raise ValueError("Словарь bindings не может быть пустым")
         return self
 
     @classmethod

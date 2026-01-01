@@ -23,7 +23,7 @@ class TestStateManager:
     @pytest.mark.asyncio
     async def test_load_state_valid_yaml(self, temp_state_file: Path):
         """Test loading state from a valid YAML file."""
-        state_data = {"domain1": {"source1": 123}}
+        state_data = {"binding1": {"domain1": {"source1": 123}}}
         async with aiofiles.open(temp_state_file, "w") as f:
             await f.write(yaml.dump(state_data))
 
@@ -43,7 +43,7 @@ class TestStateManager:
     @pytest.mark.asyncio
     async def test_save_state(self, temp_state_file: Path):
         """Test saving state to a file."""
-        state = State.model_validate({"domain1": {"source1": 456}})
+        state = State.model_validate({"binding1": {"domain1": {"source1": 456}}})
         await _save_state(state, temp_state_file)
 
         # Verify the file was created and has the correct content
@@ -53,65 +53,65 @@ class TestStateManager:
 
     @pytest.mark.asyncio
     async def test_get_last_post_id_not_found(self, temp_state_file: Path):
-        """Test getting last post ID when domain/source doesn't exist."""
+        """Test getting last post ID when binding/domain/source doesn't exist."""
         # Create a state file with some data
-        state_data = {"domain1": {"source1": 123}}
+        state_data = {"binding1": {"domain1": {"source1": 123}}}
         async with aiofiles.open(temp_state_file, "w") as f:
             await f.write(yaml.dump(state_data))
 
-        post_id = await get_last_post_id("nonexistent_domain", "source1", temp_state_file)
+        post_id = await get_last_post_id("nonexistent_binding", "domain1", "source1", temp_state_file)
         assert post_id == 0
 
     @pytest.mark.asyncio
     async def test_get_last_post_id_source_not_found(self, temp_state_file: Path):
         """Test getting last post ID when source doesn't exist for domain."""
         # Create a state file with some data
-        state_data = {"domain1": {"source1": 123}}
+        state_data = {"binding1": {"domain1": {"source1": 123}}}
         async with aiofiles.open(temp_state_file, "w") as f:
             await f.write(yaml.dump(state_data))
 
-        post_id = await get_last_post_id("domain1", "nonexistent_source", temp_state_file)
+        post_id = await get_last_post_id("binding1", "domain1", "nonexistent_source", temp_state_file)
         assert post_id == 0
 
     @pytest.mark.asyncio
     async def test_get_last_post_id_found(self, temp_state_file: Path):
-        """Test getting last post ID when domain and source exist."""
+        """Test getting last post ID when binding, domain and source exist."""
         # Create a state file with some data
-        state_data = {"domain1": {"source1": 789, "source2": 999}}
+        state_data = {"binding1": {"domain1": {"source1": 789, "source2": 999}}}
         async with aiofiles.open(temp_state_file, "w") as f:
             await f.write(yaml.dump(state_data))
 
-        post_id = await get_last_post_id("domain1", "source1", temp_state_file)
+        post_id = await get_last_post_id("binding1", "domain1", "source1", temp_state_file)
         assert post_id == 789
 
     @pytest.mark.asyncio
-    async def test_set_last_post_id_new_domain(self, temp_state_file: Path):
-        """Test setting last post ID for a new domain."""
-        await set_last_post_id("new_domain", 456, "source1", temp_state_file)
+    async def test_set_last_post_id_new_binding(self, temp_state_file: Path):
+        """Test setting last post ID for a new binding."""
+        await set_last_post_id("new_binding", "domain1", 456, "source1", temp_state_file)
 
         # Verify the state was saved
         state = await _load_state(temp_state_file)
-        assert state.root["new_domain"]["source1"] == 456
+        assert state.root["new_binding"]["domain1"]["source1"] == 456
 
     @pytest.mark.asyncio
-    async def test_set_last_post_id_existing_domain(self, temp_state_file: Path):
-        """Test setting last post ID for an existing domain."""
+    async def test_set_last_post_id_existing_binding(self, temp_state_file: Path):
+        """Test setting last post ID for an existing binding."""
         # First set an initial value
-        await set_last_post_id("existing_domain", 123, "source1", temp_state_file)
+        await set_last_post_id("existing_binding", "domain1", 123, "source1", temp_state_file)
         # Then update it
-        await set_last_post_id("existing_domain", 789, "source1", temp_state_file)
+        await set_last_post_id("existing_binding", "domain1", 789, "source1", temp_state_file)
 
         # Verify the state was updated
         state = await _load_state(temp_state_file)
-        assert state.root["existing_domain"]["source1"] == 789
+        assert state.root["existing_binding"]["domain1"]["source1"] == 789
 
     @pytest.mark.asyncio
     async def test_set_last_post_id_different_sources(self, temp_state_file: Path):
         """Test setting last post ID for different sources under the same domain."""
-        await set_last_post_id("domain1", 111, "source1", temp_state_file)
-        await set_last_post_id("domain1", 222, "source2", temp_state_file)
+        await set_last_post_id("binding1", "domain1", 111, "source1", temp_state_file)
+        await set_last_post_id("binding1", "domain1", 222, "source2", temp_state_file)
 
         # Verify both sources were saved
         state = await _load_state(temp_state_file)
-        assert state.root["domain1"]["source1"] == 111
-        assert state.root["domain1"]["source2"] == 222
+        assert state.root["binding1"]["domain1"]["source1"] == 111
+        assert state.root["binding1"]["domain1"]["source2"] == 222

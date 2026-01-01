@@ -47,10 +47,25 @@ class TestSettingsValidation:
         monkeypatch.setenv("TELEGRAM_API_ID", "12345")
         monkeypatch.setenv("TELEGRAM_API_HASH", "test_hash")
 
-        with pytest.raises(ValidationError) as exc_info:
-            Settings(bindings=[])  # type: ignore[call-arg]
+        # Create a temporary empty YAML file to avoid loading the main config
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as tmp_file:
+            tmp_file.write("app: {wait_time_seconds: 300}\nbindings: {}\n")
+            tmp_yaml_path = tmp_file.name
 
-        assert "Список bindings не может быть пустым" in str(exc_info.value)
+        try:
+            # Mock the YAML config source to use our temporary file
+            with patch("src.reposter.config.settings.Settings.YamlConfigSource") as mock_yaml_source:
+                mock_yaml_source.return_value.return_value = {}
+
+                with pytest.raises(ValidationError) as exc_info:
+                    Settings(bindings={})  # type: ignore[call-arg]
+
+                assert "Словарь bindings не может быть пустым" in str(exc_info.value)
+        finally:
+            # Clean up temporary file
+            import os
+
+            os.unlink(tmp_yaml_path)
 
     def test_vk_config_domain_min_length(self):
         """Test validation error when VK config domain has min length."""
@@ -89,23 +104,28 @@ class TestSettingsValidation:
 
     def test_settings_valid_creation(self, monkeypatch: MonkeyPatch):
         """Test creating valid settings."""
-        # Mock the YAML config source to avoid loading from file
+        # Mock environment variables
         monkeypatch.setenv("VK_SERVICE_TOKEN", "test_token")
         monkeypatch.setenv("TELEGRAM_API_ID", "12345")
         monkeypatch.setenv("TELEGRAM_API_HASH", "test_hash")
 
-        # The Settings class loads from environment variables and YAML
-        # We need to set the required environment variables
-        settings = Settings(
-            bindings=[
-                BindingConfig(
-                    vk=VKConfig(domain="test", post_count=5, post_source="wall"),
-                    telegram=TelegramConfig(channel_ids=["@test_channel"]),
-                )
-            ],
-        )  # type: ignore[call-arg]
-        # Check that the bindings were correctly set
-        assert len(settings.bindings) == 1
+        # Mock the YAML config source to return empty dict (no file loading)
+        with patch("src.reposter.config.settings.Settings.YamlConfigSource") as mock_yaml_source:
+            mock_yaml_source.return_value.return_value = {}
+
+            # Create settings directly without loading from YAML
+            settings = Settings(
+                bindings={
+                    "test_binding": BindingConfig(
+                        vk=VKConfig(domain="test", post_count=5, post_source="wall"),
+                        telegram=TelegramConfig(channel_ids=["@test_channel"]),
+                    )
+                },
+            )  # type: ignore[call-arg]
+
+            # Check that the bindings were correctly set
+            assert len(settings.bindings) == 1
+            assert "test_binding" in settings.bindings
 
     def test_binding_config_with_telegram_only(self):
         """Test binding config with only telegram target."""

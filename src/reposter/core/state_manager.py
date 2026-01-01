@@ -29,30 +29,41 @@ async def _save_state(state: State, state_file: Path) -> None:
         await f.write(content)
 
 
-async def get_last_post_id(domain: str, post_source: str, state_file: Path) -> int:
-    """Reads the last processed post ID for a specific domain and source from the state file."""
-    log(f"💾 Читаю ID последнего поста для {domain} ({post_source}) из {state_file}...", indent=1)
+async def get_last_post_id(binding_name: str, domain: str, post_source: str, state_file: Path) -> int:
+    """Reads the last processed post ID for a specific binding, domain and source from the state file."""
+    log(
+        f"💾 Читаю ID последнего поста для связки {binding_name}, {domain} ({post_source}) из {state_file}...", indent=1
+    )
     state = await _load_state(state_file)
 
-    domain_state = state.root.get(domain)
-    if domain_state:
-        post_id = domain_state.get(post_source, 0)
-        log(f"✅ ID последнего поста для {domain} ({post_source}): {post_id}", indent=1)
-        return post_id
+    binding_state = state.root.get(binding_name)
+    if binding_state:
+        domain_state = binding_state.get(domain)
+        if domain_state:
+            post_id = domain_state.get(post_source, 0)
+            log(f"✅ ID последнего поста для связки {binding_name}, {domain} ({post_source}): {post_id}", indent=1)
+            return post_id
 
-    log(f"✅ ID последнего поста для {domain} ({post_source}) не найден, возвращаю 0.", indent=1)
+    log(f"✅ ID последнего поста для связки {binding_name}, {domain} ({post_source}) не найден, возвращаю 0.", indent=1)
     return 0
 
 
-async def set_last_post_id(domain: str, post_id: int, post_source: str, state_file: Path) -> None:
-    """Writes the last processed post ID for a specific domain and source to the state file."""
-    log(f"💾 Записываю ID последнего поста для {domain} ({post_source}) в {state_file}...", indent=3, padding_top=1)
+async def set_last_post_id(binding_name: str, domain: str, post_id: int, post_source: str, state_file: Path) -> None:
+    """Writes the last processed post ID for a specific binding, domain and source to the state file."""
+    log(
+        f"💾 Записываю ID последнего поста для связки {binding_name}, {domain} ({post_source}) в {state_file}...",
+        indent=3,
+        padding_top=1,
+    )
     state = await _load_state(state_file)
 
-    if domain not in state.root:
-        state.root[domain] = {}
+    if binding_name not in state.root:
+        state.root[binding_name] = {}
 
-    state.root[domain][post_source] = post_id
+    if domain not in state.root[binding_name]:
+        state.root[binding_name][domain] = {}
+
+    state.root[binding_name][domain][post_source] = post_id
 
     await _save_state(state, state_file)
-    log(f"✅ ID последнего поста для {domain} ({post_source}) обновлен: {post_id}", indent=3)
+    log(f"✅ ID последнего поста для связки {binding_name}, {domain} ({post_source}) обновлен: {post_id}", indent=3)

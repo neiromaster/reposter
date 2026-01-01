@@ -74,12 +74,12 @@ class TestBindingTaskExecutor:
     @pytest.mark.asyncio
     async def test_execute_with_bindings(self, binding_task_executor: BindingTaskExecutor, settings: Settings):
         """Test execute with bindings."""
-        settings.bindings = [
-            Binding(
+        settings.bindings = {
+            "test_binding": Binding(
                 vk=VKSource(domain="test", post_count=5, post_source="wall"),
                 telegram=TelegramTarget(channel_ids=[123]),
             )
-        ]
+        }
 
         # Create sample posts
         new_post = Post(id=2, text="new", date=2000, attachments=[], owner_id=1, from_id=1, is_pinned=None)
@@ -115,12 +115,12 @@ class TestBindingTaskExecutor:
         self, binding_task_executor: BindingTaskExecutor, settings: Settings
     ):
         """Test execute with shutdown event already set."""
-        settings.bindings = [
-            Binding(
+        settings.bindings = {
+            "test_binding": Binding(
                 vk=VKSource(domain="test", post_count=5, post_source="wall"),
                 telegram=TelegramTarget(channel_ids=[123]),
             )
-        ]
+        }
 
         shutdown_event = Event()
         shutdown_event.set()  # Set the event to trigger shutdown
@@ -135,12 +135,12 @@ class TestBindingTaskExecutor:
     @pytest.mark.asyncio
     async def test_execute_with_new_posts(self, binding_task_executor: BindingTaskExecutor, settings: Settings):
         settings.app = AppConfig(state_file=Path("test_state.yaml"))
-        settings.bindings = [
-            Binding(
+        settings.bindings = {
+            "test_binding": Binding(
                 vk=VKSource(domain="test", post_count=5, post_source="wall"),
                 telegram=TelegramTarget(channel_ids=[123]),
             )
-        ]
+        }
 
         # Create sample posts
         new_post = Post(id=2, text="new", date=2000, attachments=[], owner_id=1, from_id=1, is_pinned=None)
@@ -175,13 +175,13 @@ class TestBindingTaskExecutor:
     async def test_execute_with_boosty_target(self, binding_task_executor: BindingTaskExecutor, settings: Settings):
         """Test execute with both Telegram and Boosty targets."""
         settings.app = AppConfig(state_file=Path("test_state.yaml"))
-        settings.bindings = [
-            Binding(
+        settings.bindings = {
+            "test_binding": Binding(
                 vk=VKSource(domain="test", post_count=5, post_source="wall"),
                 telegram=TelegramTarget(channel_ids=[123]),
                 boosty=BoostyTarget(blog_name="test_blog", subscription_level_id=1),
             )
-        ]
+        }
 
         # Create sample posts
         new_post = Post(id=2, text="new", date=2000, attachments=[], owner_id=1, from_id=1, is_pinned=None)
@@ -211,12 +211,12 @@ class TestBindingTaskExecutor:
     ):
         """Test execute when a post becomes empty after processing."""
         settings.app = AppConfig(state_file=Path("test_state.yaml"))
-        settings.bindings = [
-            Binding(
+        settings.bindings = {
+            "test_binding": Binding(
                 vk=VKSource(domain="test", post_count=5, post_source="wall"),
                 telegram=TelegramTarget(channel_ids=[123]),
             )
-        ]
+        }
 
         # Create sample post
         new_post = Post(id=2, text="new", date=2000, attachments=[], owner_id=1, from_id=1, is_pinned=None)
@@ -248,12 +248,12 @@ class TestBindingTaskExecutor:
     @pytest.mark.asyncio
     async def test_execute_no_new_posts(self, binding_task_executor: BindingTaskExecutor, settings: Settings):
         """Test execute when there are no new posts."""
-        settings.bindings = [
-            Binding(
+        settings.bindings = {
+            "test_binding": Binding(
                 vk=VKSource(domain="test", post_count=5, post_source="wall"),
                 telegram=TelegramTarget(channel_ids=[123]),
             )
-        ]
+        }
 
         with (
             patch("src.reposter.executors.binding_task_executor.get_last_post_id", return_value=1),
@@ -276,12 +276,12 @@ class TestBindingTaskExecutor:
         self, binding_task_executor: BindingTaskExecutor, settings: Settings
     ):
         """Test execute with shutdown during post processing."""
-        settings.bindings = [
-            Binding(
+        settings.bindings = {
+            "test_binding": Binding(
                 vk=VKSource(domain="test", post_count=5, post_source="wall"),
                 telegram=TelegramTarget(channel_ids=[123]),
             )
-        ]
+        }
 
         shutdown_event = Event()
         binding_task_executor.set_shutdown_event(shutdown_event)
@@ -308,12 +308,12 @@ class TestBindingTaskExecutor:
     @pytest.mark.asyncio
     async def test_execute_post_processing_fails(self, binding_task_executor: BindingTaskExecutor, settings: Settings):
         """Test execute when post processing fails."""
-        settings.bindings = [
-            Binding(
+        settings.bindings = {
+            "test_binding": Binding(
                 vk=VKSource(domain="test", post_count=5, post_source="wall"),
                 telegram=TelegramTarget(channel_ids=[123]),
             )
-        ]
+        }
 
         with (
             patch("src.reposter.executors.binding_task_executor.get_last_post_id", return_value=1),
@@ -332,12 +332,12 @@ class TestBindingTaskExecutor:
     @pytest.mark.asyncio
     async def test_execute_debug_mode(self, binding_task_executor: BindingTaskExecutor, settings: Settings):
         """Test execute in debug mode."""
-        settings.bindings = [
-            Binding(
+        settings.bindings = {
+            "test_binding": Binding(
                 vk=VKSource(domain="test", post_count=5, post_source="wall"),
                 telegram=TelegramTarget(channel_ids=[123]),
             )
-        ]
+        }
         binding_task_executor.debug = True
 
         with (
@@ -354,12 +354,12 @@ class TestBindingTaskExecutor:
     @pytest.mark.asyncio
     async def test_execute_get_posts_fails(self, binding_task_executor: BindingTaskExecutor, settings: Settings):
         """Test execute when getting posts fails."""
-        settings.bindings = [
-            Binding(
+        settings.bindings = {
+            "test_binding": Binding(
                 vk=VKSource(domain="test", post_count=5, post_source="wall"),
                 telegram=TelegramTarget(channel_ids=[123]),
             )
-        ]
+        }
 
         with (
             patch("src.reposter.executors.binding_task_executor.get_last_post_id", return_value=1),
@@ -375,12 +375,12 @@ class TestBindingTaskExecutor:
         self, binding_task_executor: BindingTaskExecutor, settings: Settings
     ):
         """Test that processing of a binding stops if one of the posts fails to publish."""
-        settings.bindings = [
-            Binding(
+        settings.bindings = {
+            "test_binding": Binding(
                 vk=VKSource(domain="test", post_count=5, post_source="wall"),
                 telegram=TelegramTarget(channel_ids=[123]),
             )
-        ]
+        }
 
         # Create sample posts
         post1 = Post(id=2, text="new1", date=2000, attachments=[], owner_id=1, from_id=1, is_pinned=None)
