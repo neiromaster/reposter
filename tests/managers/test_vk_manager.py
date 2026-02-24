@@ -354,6 +354,7 @@ async def test_get_vk_wall_with_user_token_and_mixed_posts(vk_manager: VKManager
                     "text": "Regular Post",
                     "date": 1700000000,
                     "attachments": [],
+                    "donut": {"is_donut": False},
                 },
                 {
                     "id": 456,
@@ -362,34 +363,13 @@ async def test_get_vk_wall_with_user_token_and_mixed_posts(vk_manager: VKManager
                     "text": "Donut Post",
                     "date": 1700000001,
                     "attachments": [],
-                },
-            ],
-        }
-    }
-    mock_response_donut: VKAPIResponseDict = {
-        "response": {
-            "count": 1,
-            "items": [
-                {
-                    "id": 456,
-                    "owner_id": -12345,
-                    "from_id": -12345,
-                    "text": "Donut Post",
-                    "date": 1700000001,
-                    "attachments": [],
+                    "donut": {"is_donut": True},
                 },
             ],
         }
     }
 
-    def side_effect(request: httpx.Request):
-        if request.url.params.get("filter") == "donut":
-            return httpx.Response(json=cast(dict[str, object], mock_response_donut), status_code=200)
-        if request.url.params.get("filter") == "all":
-            return httpx.Response(json=cast(dict[str, object], mock_response_all), status_code=200)
-        return httpx.Response(status_code=404)
-
-    respx.get("https://api.vk.ru/method/wall.get").mock(side_effect=side_effect)
+    respx.get("https://api.vk.ru/method/wall.get").respond(json=cast(dict[str, object], mock_response_all))
 
     posts = await vk_manager.get_vk_wall("example", page_size=5, post_source="wall", last_post_id=None)
 
@@ -428,58 +408,6 @@ async def test_download_file_generic_exception(vk_manager: VKManager, settings: 
 
     # Ensure no partial file remains
     assert not (tmp_path / "test.jpg").exists()
-
-
-@pytest.mark.asyncio
-@respx.mock
-async def test_get_vk_wall_fallback_on_donut_access_error(vk_manager: VKManager, settings: Settings):
-    """
-    Tests that the manager falls back to returning all posts if there's an access error
-    when trying to fetch donut-only posts.
-    """
-    await vk_manager.setup(settings)
-
-    mock_response_all: VKAPIResponseDict = {
-        "response": {
-            "count": 2,
-            "items": [
-                {
-                    "id": 123,
-                    "owner_id": -12345,
-                    "from_id": -12345,
-                    "text": "Regular Post",
-                    "date": 1700000000,
-                    "attachments": [],
-                },
-                {
-                    "id": 456,
-                    "owner_id": -12345,
-                    "from_id": -12345,
-                    "text": "Donut Post",
-                    "date": 1700000001,
-                    "attachments": [],
-                },
-            ],
-        }
-    }
-    mock_error_donut = {"error": {"error_code": 100, "error_msg": "Access denied: no access to donuts."}}
-
-    def side_effect(request: httpx.Request):
-        if request.url.params.get("filter") == "donut":
-            # This response will be caught by _get_wall_posts and raised as a VKApiError
-            return httpx.Response(json=mock_error_donut, status_code=200)
-        if request.url.params.get("filter") == "all":
-            return httpx.Response(json=cast(dict[str, object], mock_response_all), status_code=200)
-        return httpx.Response(status_code=404)
-
-    respx.get("https://api.vk.ru/method/wall.get").mock(side_effect=side_effect)
-
-    posts = await vk_manager.get_vk_wall("example", page_size=5, post_source="wall", last_post_id=None)
-
-    # Expect both posts because filtering was skipped
-    assert len(posts) == 2
-    assert posts[0].id == 123
-    assert posts[1].id == 456
 
 
 @pytest.mark.asyncio

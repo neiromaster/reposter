@@ -90,6 +90,10 @@ class DonutLink(BaseModel):
     owner_id: int
 
 
+class WallpostDonut(BaseModel):
+    is_donut: bool = False
+
+
 class Attachment(BaseModel):
     type: Literal["photo", "video", "doc", "link", "poll", "audio", "graffiti", "donut_link"]
     photo: Photo | None = None
@@ -110,6 +114,7 @@ class Post(BaseModel):
     text: str
     attachments: list[Attachment] = []
     is_pinned: int | None = Field(None)
+    donut: WallpostDonut | None = None
 
 
 class WallGetResponse(BaseModel):

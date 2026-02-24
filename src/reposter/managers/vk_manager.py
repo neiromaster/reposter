@@ -269,28 +269,14 @@ class VKManager(BaseManager):
         # post_source == "wall"
         if self._user_token:
             log(f"🔍 [VK] Собираю посты со стены (с фильтрацией Donut): {domain}...", indent=1)
-            base_params = {
+            params = {
                 "domain": domain,
                 "access_token": self._user_token,
                 "v": "5.199",
+                "filter": "all",
             }
-
-            all_posts = await _get_all_new_posts({**base_params, "filter": "all"})
-
-            try:
-                donut_posts = await _get_all_new_posts({**base_params, "filter": "donut"})
-                donut_ids = {p.id for p in donut_posts}
-                return [post for post in all_posts if post.id not in donut_ids]
-            except (VKApiError, ValueError) as e:
-                if "no access to donuts" in str(e):
-                    log(
-                        "⚠️ [VK] Нет доступа к донатным постам, невозможно отфильтровать. "
-                        "Возвращаются все посты со стены.",
-                        indent=1,
-                    )
-                    return all_posts
-                else:
-                    raise
+            all_posts = await _get_all_new_posts(params)
+            return [post for post in all_posts if not (post.donut and post.donut.is_donut)]
         else:
             # service token only
             log(f"🔍 [VK] Собираю посты со стены: {domain}...", indent=1)
