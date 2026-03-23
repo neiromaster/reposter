@@ -103,7 +103,10 @@ class AttachmentDownloaderStep(ProcessingStep):
         best_thumb = self._find_best_thumbnail(video.image)
         if best_thumb:
             log("🖼️ Скачиваю обложку...", indent=5)
-            thumb_path = await self.vk.download_file(best_thumb.url, Path("downloads/thumbnails"))
+            try:
+                thumb_path = await self.vk.download_file(best_thumb.url, Path("downloads/thumbnails"))
+            except Exception as e:
+                log(f"⚠️ Не удалось скачать обложку (продолжаю без неё): {e}", indent=5)
 
         try:
             media_info = MediaInfo.parse(str(video_path))
