@@ -70,7 +70,7 @@ class Doc(BaseModel):
 class Link(BaseModel):
     title: str
     url: HttpUrl
-    description: str
+    description: str | None = None
 
 
 class PollAnswer(BaseModel):

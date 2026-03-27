@@ -461,3 +461,49 @@ async def test_get_vk_wall_pagination_safety_break(
     # Check that the warning message was logged
     captured = capsys.readouterr()
     assert "Достигнут лимит пагинации (offset=2100)" in captured.out
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_vk_wall_link_attachment_without_description(vk_manager: VKManager, settings: Settings):
+    """
+    Tests that link attachments without description are handled correctly.
+    This reproduces the bug where VK API returns link attachments with only 'url' field.
+    """
+    await vk_manager.setup(settings)
+
+    mock_response: VKAPIResponseDict = {
+        "response": {
+            "count": 1,
+            "items": [
+                {
+                    "id": 123,
+                    "owner_id": -12345,
+                    "from_id": -12345,
+                    "text": "Post with link",
+                    "date": 1700000000,
+                    "attachments": [
+                        {
+                            "type": "link",
+                            "link": {
+                                "title": "Example Link",
+                                "url": "https://vk.ru/im",
+                                # Note: no 'description' field - this is the bug scenario
+                            },
+                        }
+                    ],
+                }
+            ],
+        }
+    }
+
+    respx.get("https://api.vk.ru/method/wall.get").respond(json=cast(dict[str, object], mock_response))
+
+    posts = await vk_manager.get_vk_wall("example", page_size=5, post_source="wall", last_post_id=None)
+
+    assert len(posts) == 1
+    assert posts[0].id == 123
+    assert len(posts[0].attachments) == 1
+    assert posts[0].attachments[0].link is not None
+    assert posts[0].attachments[0].link.title == "Example Link"
+    assert posts[0].attachments[0].link.description is None  # Should be None, not required
