@@ -196,6 +196,7 @@ class YTDLPManager(BaseManager):
                 error_str = payload.lower()
                 if (
                     "доступ ограничен" in error_str
+                    or "access restricted" in error_str
                     or "private video" in error_str
                     or "this video is only available for registered users" in error_str
                 ) and attempt < retries - 1:
