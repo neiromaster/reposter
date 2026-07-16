@@ -49,7 +49,7 @@ class Video(BaseModel):
 
     @property
     def url(self) -> str:
-        return f"https://vk.com/video{self.owner_id}_{self.id}"
+        return f"https://vk.ru/video{self.owner_id}_{self.id}"
 
 
 class Audio(BaseModel):

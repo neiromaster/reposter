@@ -35,9 +35,9 @@ def normalize_links(text: str) -> str:
         label = match.group(2).strip()
 
         if re.fullmatch(r"(club\d+|id\d+)", link):
-            return f"[{label}](vk.com/{link})"
+            return f"[{label}](vk.ru/{link})"
 
-        if link.startswith("vk.com/") and re.match(r"https?://", label):
+        if link.startswith("vk.ru/") and re.match(r"https?://", label):
             parsed = urlparse(label)
             return parsed.netloc + (parsed.path if parsed.path != "/" else "")
 

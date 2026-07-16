@@ -2,7 +2,7 @@
 
 ## Description
 
-`Reposter` is an automated tool for synchronizing and reposting content between VK.com, Telegram and Boosty social networks. The application periodically checks for new posts in specified VK sources, processes them (including downloading media files using yt-dlp), and publishes them to target Telegram channels or Boosty blogs. Flexible configuration of reposting rules and download parameters is supported.
+`Reposter` is an automated tool for synchronizing and reposting content between VK.ru, Telegram and Boosty social networks. The application periodically checks for new posts in specified VK sources, processes them (including downloading media files using yt-dlp), and publishes them to target Telegram channels or Boosty blogs. Flexible configuration of reposting rules and download parameters is supported.
 
 ## Features
 
@@ -126,12 +126,12 @@ To interact with the Telegram API on behalf of a user, you will need `api_id` an
 
 The first time the application runs with this data, it will ask for your phone number and confirmation code to create a session file (whose name is specified in `app.session_name`), which will be used for subsequent authorization.
 
-#### VK.com (Service Access Key)
+#### VK.ru (Service Access Key)
 
 To work with the VK API, you will need a **Service Access Token**. This key is used for requests on behalf of the application and does not require user authorization.
 
 1. **Create a Standalone Application:**
-    * Go to [My VK Applications](https://vk.com/apps?act=manage).
+    * Go to [My VK Applications](https://vk.ru/apps?act=manage).
     * Click "Create application".
     * Select "Standalone application" type.
     * Come up with a name and click "Connect application".

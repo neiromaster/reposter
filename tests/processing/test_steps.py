@@ -48,7 +48,7 @@ async def test_link_normalization_step():
     await step.process(vk_post, prepared_post)
 
     # Assert
-    assert prepared_post.text == "[My Club](vk.com/club123)"
+    assert prepared_post.text == "[My Club](vk.ru/club123)"
 
 
 @pytest.mark.asyncio
