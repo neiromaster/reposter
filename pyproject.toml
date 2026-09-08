@@ -37,6 +37,10 @@ line-length = 120
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "C4", "UP", "SIM", "ASYNC"]
+ignore = [
+    # ASYNC240 flags cheap stat calls (exists/getsize) in async funcs; real I/O uses aiofiles
+    "ASYNC240",
+]
 
 
 [dependency-groups]

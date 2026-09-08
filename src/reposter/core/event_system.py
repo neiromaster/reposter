@@ -4,6 +4,7 @@ import asyncio
 from collections import defaultdict
 from collections.abc import Callable
 from contextlib import suppress
+from inspect import iscoroutinefunction
 from typing import Any, TypeVar
 
 from ..utils.log import log
@@ -83,7 +84,7 @@ class EventManager:
 
         Automatically detects if the handler is async or not.
         """
-        if asyncio.iscoroutinefunction(handler):
+        if iscoroutinefunction(handler):
             self._async_handlers[event_name].append(handler)
         else:
             self._handlers[event_name].append(handler)

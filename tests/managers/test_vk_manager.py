@@ -128,7 +128,7 @@ async def test_download_file_success(vk_manager: VKManager, settings: Settings, 
     url = HttpUrl("https://example.com/test.jpg")
     content = b"fake image content"
 
-    respx.get(str(url)).respond(content=content)  # type: ignore[reportUnknownMemberType]
+    respx.get(str(url)).respond(content=content)
 
     result = await vk_manager.download_file(url, tmp_path)
 
@@ -215,7 +215,7 @@ async def test_get_vk_wall_with_dont_filter(vk_manager: VKManager, settings: Set
     await vk_manager.setup(settings)
 
     mock_response: VKAPIResponseDict = {"response": {"count": 0, "items": []}}
-    route = respx.get("https://api.vk.ru/method/wall.get").respond(  # type: ignore[reportUnknownMemberType]
+    route = respx.get("https://api.vk.ru/method/wall.get").respond(
         json=cast(dict[str, object], mock_response)
     )
 
@@ -234,7 +234,7 @@ async def test_get_vk_wall_api_error(vk_manager: VKManager, settings: Settings):
 
     error_response = {"error": {"error_code": 5, "error_msg": "Access denied"}}
 
-    respx.get("https://api.vk.ru/method/wall.get").respond(json=error_response)  # type: ignore[reportUnknownMemberType]
+    respx.get("https://api.vk.ru/method/wall.get").respond(json=error_response)
 
     with pytest.raises(VKApiError, match="Access denied"):
         await vk_manager.get_vk_wall("example", page_size=5, post_source="wall", last_post_id=None)
@@ -245,7 +245,7 @@ async def test_get_vk_wall_api_error(vk_manager: VKManager, settings: Settings):
 async def test_get_vk_wall_empty_response(vk_manager: VKManager, settings: Settings):
     await vk_manager.setup(settings)
 
-    respx.get("https://api.vk.ru/method/wall.get").respond(json={})  # type: ignore[reportUnknownMemberType]
+    respx.get("https://api.vk.ru/method/wall.get").respond(json={})
 
     with pytest.raises(ValueError, match="VK API response is empty or invalid"):
         await vk_manager.get_vk_wall("example", page_size=5, post_source="wall", last_post_id=None)
@@ -324,7 +324,7 @@ async def test_get_vk_wall_no_user_token(vk_manager: VKManager, settings: Settin
         }
     }
 
-    route = respx.get("https://api.vk.ru/method/wall.get").respond(json=cast(dict[str, object], mock_response))  # type: ignore[reportUnknownMemberType]
+    route = respx.get("https://api.vk.ru/method/wall.get").respond(json=cast(dict[str, object], mock_response))
 
     posts = await vk_manager.get_vk_wall("example", page_size=5, post_source="wall", last_post_id=None)
 
