@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Any, cast
 
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import BaseModel, Field, HttpUrl, model_validator
 
 
 class PhotoSize(BaseModel):
@@ -95,7 +95,7 @@ class WallpostDonut(BaseModel):
 
 
 class Attachment(BaseModel):
-    type: Literal["photo", "video", "doc", "link", "poll", "audio", "graffiti", "donut_link"]
+    type: str
     photo: Photo | None = None
     video: Video | None = None
     doc: Doc | None = None
@@ -119,3 +119,13 @@ class Post(BaseModel):
 
 class WallGetResponse(BaseModel):
     items: list[Post]
+
+    @model_validator(mode="before")
+    @classmethod
+    def _drop_ad_items(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        clean = cast(dict[str, Any], data)
+        raw_items = cast(list[Any], clean.get("items"))
+        clean["items"] = [item for item in raw_items if isinstance(item, dict) and "id" in item]
+        return clean
