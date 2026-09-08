@@ -215,9 +215,7 @@ async def test_get_vk_wall_with_dont_filter(vk_manager: VKManager, settings: Set
     await vk_manager.setup(settings)
 
     mock_response: VKAPIResponseDict = {"response": {"count": 0, "items": []}}
-    route = respx.get("https://api.vk.ru/method/wall.get").respond(
-        json=cast(dict[str, object], mock_response)
-    )
+    route = respx.get("https://api.vk.ru/method/wall.get").respond(json=cast(dict[str, object], mock_response))
 
     await vk_manager.get_vk_wall("example", page_size=5, post_source="donut", last_post_id=None)
 
