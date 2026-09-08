@@ -32,18 +32,18 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Set up Python ${{ matrix.python_arch }}
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: '3.12'
           architecture: ${{ matrix.python_arch }}
 
       - name: Cache pip & uv
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cache/pip
@@ -68,7 +68,7 @@ jobs:
         run: uv run pyinstaller main.py --onefile --name reposter-${{ matrix.label }} --log-level=DEBUG --paths src
 
       - name: Upload build artifact
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: reposter-${{ matrix.label }}
           path: dist/*
@@ -85,12 +85,12 @@ jobs:
       contents: write
     steps:
       - name: Download all artifacts
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v8
         with:
           path: artifacts/
 
       - name: Publish release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           body: ${{ needs.changelog.outputs.changelog }}
           files: artifacts/**/*
