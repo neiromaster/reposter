@@ -1,12 +1,16 @@
 import sys
 from pathlib import Path
+from unittest.mock import Mock, patch
 
+import psutil
 import pytest
 
 from src.reposter.utils import browser as browser_module
 from src.reposter.utils.browser import (
     CookieSpec,
     ResolvedFirefoxProfile,
+    close_process_gracefully,
+    close_process_tree_gracefully,
     firefox_profile_args,
     is_firefox_main_process,
     matches_firefox_profile_argv,
@@ -253,3 +257,53 @@ class TestMatchesFirefoxProfileArgv:
         monkeypatch.setattr(browser_module, "resolve_firefox_profile", lambda value, ini_path=None: None)
         argv = ["firefox.exe", "--profile", str(resolved.path).upper()]
         assert matches_firefox_profile_argv(argv, resolved) is True
+
+
+class TestCloseProcessGracefully:
+    def test_uses_taskkill_then_waits(self):
+        proc = Mock()
+        proc.pid = 123
+        proc.wait = Mock()
+        with patch("subprocess.run") as mock_run:
+            close_process_gracefully(proc)
+        mock_run.assert_called_once()
+        assert mock_run.call_args.args[0] == ["taskkill", "/PID", "123"]
+        proc.kill.assert_not_called()
+
+    def test_kills_after_timeout(self):
+        proc = Mock()
+        proc.pid = 123
+        proc.wait = Mock(side_effect=[psutil.TimeoutExpired(123), None])
+        with patch("subprocess.run"):
+            close_process_gracefully(proc, timeout=0.01)
+        proc.kill.assert_called_once()
+
+    def test_process_disappearing_is_not_an_error(self):
+        proc = Mock()
+        proc.pid = 5
+        proc.wait = Mock(side_effect=psutil.NoSuchProcess(5))
+        with patch("subprocess.run"):
+            close_process_gracefully(proc)  # не должен бросать исключений
+
+
+class TestCloseProcessTreeGracefully:
+    def test_closes_children_too(self):
+        child = Mock()
+        child.pid = 2
+        child.wait = Mock()
+        proc = Mock()
+        proc.pid = 1
+        proc.children.return_value = [child]
+        proc.wait = Mock()
+        with patch("subprocess.run"):
+            close_process_tree_gracefully(proc)
+        child.kill.assert_not_called()  # ребёнок ушёл сам после закрытия родителя
+        proc.wait.assert_called()
+
+    def test_children_error_is_swallowed(self):
+        proc = Mock()
+        proc.pid = 1
+        proc.children.side_effect = psutil.AccessDenied(1)
+        proc.wait = Mock()
+        with patch("subprocess.run"):
+            close_process_tree_gracefully(proc)  # не должен бросать исключений
