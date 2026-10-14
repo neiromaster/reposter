@@ -39,15 +39,13 @@ def parse_cookies_spec(spec: str) -> CookieSpec:
     match = _COOKIE_SPEC_RE.match(spec)
     if not match:
         raise ValueError(
-            f"Некорректный формат cookies_from_browser: {spec!r}. "
-            "Ожидается browser[:profile[:keyring[:container]]]"
+            f"Некорректный формат cookies_from_browser: {spec!r}. Ожидается browser[:profile[:keyring[:container]]]"
         )
 
     browser = match.group("browser").lower()
     if browser not in SUPPORTED_BROWSERS:
         raise ValueError(
-            f"Неподдерживаемый браузер в cookies_from_browser: {browser!r}. "
-            f"Доступны: {', '.join(SUPPORTED_BROWSERS)}"
+            f"Неподдерживаемый браузер в cookies_from_browser: {browser!r}. Доступны: {', '.join(SUPPORTED_BROWSERS)}"
         )
 
     # Extension over yt-dlp: when the remainder after the browser points to an
