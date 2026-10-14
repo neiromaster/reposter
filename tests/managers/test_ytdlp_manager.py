@@ -501,7 +501,7 @@ def test_browser_executables_structure():
 
 class TestBuildYdlOpts:
     def test_uses_resolved_profile_tuple(self, ytdlp_manager: YTDLPManager, settings: Settings):
-        settings.downloader.yt_dlp_opts = {"format": "best"}
+        settings.downloader.yt_dlp_opts = {"format": "best", "quiet": False}
         with patch(
             "src.reposter.managers.ytdlp_manager.resolve_cookie_profile",
             return_value=("firefox", r"C:\prof\ns5j57qn.default-release-1", None, None),
@@ -510,6 +510,9 @@ class TestBuildYdlOpts:
         assert opts["cookiesfrombrowser"] == ("firefox", r"C:\prof\ns5j57qn.default-release-1", None, None)
         assert opts["format"] == "best"
         assert opts["outtmpl"].startswith(str(Path(tempfile.gettempdir()) / "test_ytdlp"))
+        assert opts["quiet"] is True
+        assert opts["no_warnings"] is True
+        assert opts["verbose"] is False
         mock_resolve.assert_called_once_with(settings.downloader.cookie_spec)
 
     def test_real_config_resolves_profile_path(self, ytdlp_manager: YTDLPManager, tmp_path: Path):
