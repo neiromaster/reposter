@@ -18,6 +18,8 @@ from typing import Final
 
 import psutil
 
+from .log import log
+
 _COOKIE_SPEC_RE: Final[re.Pattern[str]] = re.compile(
     r"^(?P<browser>[^:]+)"
     r"(?::(?P<profile>[^:]*)(?::(?P<keyring>[^:]*)(?::(?P<container>[^:]*))?)?)?$"
@@ -160,6 +162,20 @@ def resolve_firefox_profile(value: str, ini_path: Path | None = None) -> Resolve
     if direct.is_dir():
         return ResolvedFirefoxProfile(direct.resolve(), None, False)
     return None
+
+
+def resolve_cookie_profile(spec: CookieSpec) -> tuple[str, str | None, str | None, str | None]:
+    """Builds a cookiesfrombrowser tuple for yt-dlp from a CookieSpec.
+
+    Firefox profiles are resolved to absolute paths (yt-dlp cannot look up
+    profiles.ini names); unresolved values are passed through as is.
+    """
+    if spec.browser == "firefox" and spec.profile is not None:
+        resolved = resolve_firefox_profile(spec.profile)
+        if resolved is not None:
+            return spec.browser, str(resolved.path), spec.keyring, spec.container
+        log(f"⚠️ Профиль Firefox {spec.profile!r} не найден, передаю значение в yt-dlp как есть.", indent=4)
+    return spec.browser, spec.profile, spec.keyring, spec.container
 
 
 def firefox_profile_args(argv: list[str]) -> list[str]:

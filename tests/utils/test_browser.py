@@ -15,6 +15,7 @@ from src.reposter.utils.browser import (
     is_firefox_main_process,
     matches_firefox_profile_argv,
     parse_cookies_spec,
+    resolve_cookie_profile,
     resolve_firefox_profile,
 )
 
@@ -337,3 +338,39 @@ class TestCloseProcessTreeGracefully:
         proc.wait = Mock()
         with patch("subprocess.run"):
             close_process_tree_gracefully(proc)  # must not raise
+
+
+class TestResolveCookieProfile:
+    def test_resolves_firefox_profile_to_path(self, profiles_ini: Path, tmp_path: Path, monkeypatch):
+        monkeypatch.setattr(browser_module, "_firefox_profiles_ini_paths", lambda: (profiles_ini,))
+        spec = CookieSpec(browser="firefox", profile="default-release-1")
+        assert resolve_cookie_profile(spec) == (
+            "firefox",
+            str(tmp_path / "Profiles" / "ns5j57qn.default-release-1"),
+            None,
+            None,
+        )
+
+    def test_unresolvable_profile_passed_through(self, tmp_path: Path, monkeypatch):
+        monkeypatch.setattr(browser_module, "_firefox_profiles_ini_paths", lambda: (tmp_path / "missing.ini",))
+        spec = CookieSpec(browser="firefox", profile="default-release-1")
+        assert resolve_cookie_profile(spec) == ("firefox", "default-release-1", None, None)
+
+    def test_chromium_profile_passed_through(self):
+        spec = CookieSpec(browser="chrome", profile="Profile 1")
+        assert resolve_cookie_profile(spec) == ("chrome", "Profile 1", None, None)
+
+    def test_keyring_container_passthrough(self, profiles_ini: Path, tmp_path: Path, monkeypatch):
+        monkeypatch.setattr(browser_module, "_firefox_profiles_ini_paths", lambda: (profiles_ini,))
+        spec = CookieSpec(
+            browser="firefox",
+            profile="default-release-1",
+            keyring="basic",
+            container="shopping",
+        )
+        assert resolve_cookie_profile(spec) == (
+            "firefox",
+            str(tmp_path / "Profiles" / "ns5j57qn.default-release-1"),
+            "basic",
+            "shopping",
+        )

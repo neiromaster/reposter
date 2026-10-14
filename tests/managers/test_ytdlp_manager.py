@@ -8,6 +8,7 @@ import pytest
 
 from src.reposter.config.settings import DownloaderConfig, RetryConfig, Settings
 from src.reposter.managers.ytdlp_manager import BROWSER_EXECUTABLES, YTDLPManager
+from src.reposter.utils.browser import CookieSpec
 
 
 @pytest.fixture
@@ -27,7 +28,9 @@ def settings():
     mock_settings.downloader.output_path = Path(tempfile.gettempdir()) / "test_ytdlp"
     mock_settings.downloader.yt_dlp_opts = {}
     mock_settings.downloader.retries = RetryConfig(count=2, delay_seconds=1)
-    mock_settings.downloader.browser = "chrome"
+    mock_settings.downloader.cookies_from_browser = "firefox:default-release-1"
+    mock_settings.downloader.cookie_spec = CookieSpec(browser="firefox", profile="default-release-1")
+    mock_settings.downloader.browser = "firefox"
     mock_settings.downloader.browser_restart_wait_seconds = 1
     return mock_settings
 
@@ -494,3 +497,41 @@ def test_browser_executables_structure():
     assert "chrome" in BROWSER_EXECUTABLES
     assert "firefox" in BROWSER_EXECUTABLES
     assert "edge" in BROWSER_EXECUTABLES
+
+
+class TestBuildYdlOpts:
+    def test_uses_resolved_profile_tuple(self, ytdlp_manager: YTDLPManager, settings: Settings):
+        settings.downloader.yt_dlp_opts = {"format": "best"}
+        with patch(
+            "src.reposter.managers.ytdlp_manager.resolve_cookie_profile",
+            return_value=("firefox", r"C:\prof\ns5j57qn.default-release-1", None, None),
+        ) as mock_resolve:
+            opts = ytdlp_manager._build_ydl_opts(settings.downloader)
+        assert opts["cookiesfrombrowser"] == ("firefox", r"C:\prof\ns5j57qn.default-release-1", None, None)
+        assert opts["format"] == "best"
+        assert opts["outtmpl"].startswith(str(Path(tempfile.gettempdir()) / "test_ytdlp"))
+        mock_resolve.assert_called_once_with(settings.downloader.cookie_spec)
+
+    def test_real_config_resolves_profile_path(self, ytdlp_manager: YTDLPManager, tmp_path: Path):
+        ini = tmp_path / "profiles.ini"
+        ini.write_text(
+            "[Profile0]\nName=default-release-1\nIsRelative=1\nPath=Profiles/ns5j57qn.default-release-1\n",
+            encoding="utf-8",
+        )
+        config = DownloaderConfig(cookies_from_browser="firefox:default-release-1", output_path=tmp_path / "dl")
+        ytdlp_manager._downloader_config = config
+        with patch("src.reposter.utils.browser._firefox_profiles_ini_paths", return_value=(ini,)):
+            opts = ytdlp_manager._build_ydl_opts(config)
+        assert opts["cookiesfrombrowser"] == (
+            "firefox",
+            str(tmp_path / "Profiles" / "ns5j57qn.default-release-1"),
+            None,
+            None,
+        )
+
+    def test_real_config_unresolvable_profile_passthrough(self, ytdlp_manager: YTDLPManager, tmp_path: Path):
+        config = DownloaderConfig(cookies_from_browser="firefox:default-release-1", output_path=tmp_path / "dl")
+        ytdlp_manager._downloader_config = config
+        with patch("src.reposter.utils.browser._firefox_profiles_ini_paths", return_value=(tmp_path / "missing.ini",)):
+            opts = ytdlp_manager._build_ydl_opts(config)
+        assert opts["cookiesfrombrowser"] == ("firefox", "default-release-1", None, None)
