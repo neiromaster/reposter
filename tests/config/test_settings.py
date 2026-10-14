@@ -226,12 +226,12 @@ class TestDownloaderCookiesSpec:
         assert config.cookie_spec == CookieSpec(browser="firefox", profile="default-release-1")
 
     def test_cookie_spec_falls_back_to_legacy_browser(self):
-        config = DownloaderConfig(browser="chrome")
-        assert config.cookie_spec == CookieSpec(browser="chrome")
+        config = DownloaderConfig(browser="edge")
+        assert config.cookie_spec == CookieSpec(browser="edge")
 
     def test_spec_wins_over_legacy_browser(self):
         config = DownloaderConfig(browser="chrome", cookies_from_browser="firefox:default-release-1")
-        assert config.cookie_spec.browser == "firefox"
+        assert config.cookie_spec == CookieSpec(browser="firefox", profile="default-release-1")
 
     def test_unknown_browser_rejected(self):
         with pytest.raises(ValidationError):
