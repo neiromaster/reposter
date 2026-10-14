@@ -237,6 +237,7 @@ def close_process_gracefully(proc: psutil.Process, timeout: float = GRACEFUL_CLO
     try:
         proc.kill()
         proc.wait(timeout=2.0)
+    # TimeoutExpired subclasses psutil.Error; do not narrow this except or a failing kill fallback can raise.
     except psutil.Error:
         pass
 

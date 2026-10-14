@@ -283,7 +283,25 @@ class TestCloseProcessGracefully:
         proc.pid = 5
         proc.wait = Mock(side_effect=psutil.NoSuchProcess(5))
         with patch("subprocess.run"):
-            close_process_gracefully(proc)  # не должен бросать исключений
+            close_process_gracefully(proc)  # must not raise
+
+    def test_kill_fallback_failure_does_not_raise(self):
+        proc = Mock()
+        proc.pid = 123
+        proc.wait = Mock(side_effect=[psutil.TimeoutExpired(123), psutil.TimeoutExpired(123)])
+        proc.kill = Mock(side_effect=psutil.AccessDenied(123))
+        with patch("subprocess.run"):
+            close_process_gracefully(proc, timeout=0.01)  # must not raise
+        proc.kill.assert_called_once()
+
+    def test_posix_terminates_without_taskkill(self):
+        proc = Mock()
+        proc.pid = 123
+        proc.wait = Mock()
+        with patch("sys.platform", "linux"), patch("subprocess.run") as mock_run:
+            close_process_gracefully(proc)
+        proc.terminate.assert_called_once()
+        mock_run.assert_not_called()
 
 
 class TestCloseProcessTreeGracefully:
@@ -297,8 +315,20 @@ class TestCloseProcessTreeGracefully:
         proc.wait = Mock()
         with patch("subprocess.run"):
             close_process_tree_gracefully(proc)
-        child.kill.assert_not_called()  # ребёнок ушёл сам после закрытия родителя
+        child.kill.assert_not_called()  # child exits on its own after parent close
         proc.wait.assert_called()
+
+    def test_children_closed_when_parent_hangs(self):
+        child = Mock()
+        child.pid = 2
+        child.wait = Mock()
+        proc = Mock()
+        proc.pid = 1
+        proc.children.return_value = [child]
+        proc.wait = Mock(side_effect=[psutil.TimeoutExpired(1), None])
+        with patch("subprocess.run"):
+            close_process_tree_gracefully(proc, timeout=0.01)
+        child.wait.assert_called()  # child still closed even though the parent needed the kill fallback
 
     def test_children_error_is_swallowed(self):
         proc = Mock()
@@ -306,4 +336,4 @@ class TestCloseProcessTreeGracefully:
         proc.children.side_effect = psutil.AccessDenied(1)
         proc.wait = Mock()
         with patch("subprocess.run"):
-            close_process_tree_gracefully(proc)  # не должен бросать исключений
+            close_process_tree_gracefully(proc)  # must not raise
