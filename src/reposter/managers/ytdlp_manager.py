@@ -14,6 +14,7 @@ import yt_dlp
 
 from ..config.settings import DownloaderConfig, Settings
 from ..interfaces.base_manager import BaseManager
+from ..utils.browser import resolve_cookie_profile
 from ..utils.log import log
 
 BROWSER_EXECUTABLES = (
@@ -83,6 +84,18 @@ class YTDLPManager(BaseManager):
         await self._terminate_active()
         self._initialized = False
         log("🎥 [YTDLP] Остановлен.", indent=1)
+
+    def _build_ydl_opts(self, config: DownloaderConfig) -> dict[str, Any]:
+        """Builds yt-dlp options, resolving the cookie source into a cookiesfrombrowser tuple."""
+        browser, profile, keyring, container = resolve_cookie_profile(config.cookie_spec)
+        return {
+            **dict(config.yt_dlp_opts),
+            "outtmpl": str(config.output_path / "%(id)s.%(ext)s"),
+            "cookiesfrombrowser": (browser, profile, keyring, container),
+            "quiet": True,
+            "no_warnings": True,
+            "verbose": False,
+        }
 
     async def __aenter__(self) -> YTDLPManager:
         """Enter the async context manager."""
@@ -155,16 +168,7 @@ class YTDLPManager(BaseManager):
         out_dir = self._downloader_config.output_path
         out_dir.mkdir(parents=True, exist_ok=True)
 
-        ydl_opts: dict[str, Any] = dict(self._downloader_config.yt_dlp_opts)
-        ydl_opts.update(
-            {
-                "outtmpl": str(out_dir / "%(id)s.%(ext)s"),
-                "cookiesfrombrowser": (self._downloader_config.browser,),
-                "quiet": True,
-                "no_warnings": True,
-                "verbose": False,
-            }
-        )
+        ydl_opts = self._build_ydl_opts(self._downloader_config)
 
         retries = self._downloader_config.retries.count
         base_delay = self._downloader_config.retries.delay_seconds
