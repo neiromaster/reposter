@@ -16,6 +16,7 @@ from src.reposter.config.settings import (
     TelegramConfig,
     VKConfig,
 )
+from src.reposter.utils.browser import CookieSpec
 
 
 class TestSettingsValidation:
@@ -217,3 +218,25 @@ class TestYamlConfigSource:
 
         # Assert
         assert first_read is second_read
+
+
+class TestDownloaderCookiesSpec:
+    def test_cookie_spec_parses_spec_field(self):
+        config = DownloaderConfig(cookies_from_browser="firefox:default-release-1")
+        assert config.cookie_spec == CookieSpec(browser="firefox", profile="default-release-1")
+
+    def test_cookie_spec_falls_back_to_legacy_browser(self):
+        config = DownloaderConfig(browser="chrome")
+        assert config.cookie_spec == CookieSpec(browser="chrome")
+
+    def test_spec_wins_over_legacy_browser(self):
+        config = DownloaderConfig(browser="chrome", cookies_from_browser="firefox:default-release-1")
+        assert config.cookie_spec.browser == "firefox"
+
+    def test_unknown_browser_rejected(self):
+        with pytest.raises(ValidationError):
+            DownloaderConfig(cookies_from_browser="lynx:default")
+
+    def test_empty_spec_rejected(self):
+        with pytest.raises(ValidationError):
+            DownloaderConfig(cookies_from_browser="   ")

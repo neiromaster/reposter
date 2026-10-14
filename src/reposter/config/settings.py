@@ -12,6 +12,7 @@ from pydantic_settings import (
     SettingsConfigDict,
 )
 
+from ..utils.browser import CookieSpec, parse_cookies_spec
 from ..utils.log import log
 
 CHANNEL_ID_RE: Final[re.Pattern[str]] = re.compile(r"^(@[A-Za-z0-9_]+|-?\d+)$")
@@ -69,11 +70,33 @@ class RetryConfig(BaseModel):
 
 
 class DownloaderConfig(BaseModel):
-    browser: Literal["chrome", "firefox", "edge"] = Field(default="chrome")
+    browser: Literal["chrome", "firefox", "edge"] = Field(
+        default="chrome",
+        description="Устарело: используйте cookies_from_browser",
+    )
+    cookies_from_browser: str | None = Field(
+        default=None,
+        description="Спека как у --cookies-from-browser в yt-dlp: browser[:profile[:keyring[:container]]]",
+    )
     output_path: Path = Field(default=Path("downloads"))
     yt_dlp_opts: dict[str, Any] = Field(default_factory=dict)
     retries: RetryConfig = Field(default_factory=RetryConfig)
     browser_restart_wait_seconds: int = Field(default=30, ge=0)
+
+    @field_validator("cookies_from_browser")
+    @classmethod
+    def validate_cookies_from_browser(cls, v: str | None) -> str | None:
+        """Fails fast on malformed specifications."""
+        if v is not None:
+            parse_cookies_spec(v)
+        return v
+
+    @property
+    def cookie_spec(self) -> CookieSpec:
+        """Parsed cookie source; falls back to the deprecated `browser` field."""
+        if self.cookies_from_browser is not None:
+            return parse_cookies_spec(self.cookies_from_browser)
+        return CookieSpec(browser=self.browser)
 
     @field_validator("output_path")
     @classmethod
