@@ -100,7 +100,7 @@ def _read_profiles_ini(ini_path: Path) -> tuple[tuple[Path, ...], list[tuple[str
     """Returns (install_default_paths, [(name, path, marked_default), ...])."""
     parser = configparser.ConfigParser(interpolation=None)
     parser.optionxform = str  # preserve key case (Name/Path/Default)
-    parser.read(ini_path, encoding="utf-8")
+    parser.read(ini_path, encoding="utf-8-sig")
 
     install_defaults: list[Path] = []
     profiles: list[tuple[str | None, Path, bool]] = []
@@ -127,6 +127,8 @@ def resolve_firefox_profile(value: str, ini_path: Path | None = None) -> Resolve
     Falls back to treating the value as an existing directory. Returns None when
     nothing matches.
     """
+    if not value.strip():
+        return None
     candidates = (ini_path,) if ini_path is not None else _firefox_profiles_ini_paths()
     # normcase() rewrites '/' to '\' on Windows, so convert back to '/' for comparison.
     value_norm = os.path.normcase(value.strip().replace("\\", "/").strip("/")).replace("\\", "/")
@@ -134,7 +136,10 @@ def resolve_firefox_profile(value: str, ini_path: Path | None = None) -> Resolve
     for ini in candidates:
         if not ini.is_file():
             continue
-        install_defaults, profiles = _read_profiles_ini(ini)
+        try:
+            install_defaults, profiles = _read_profiles_ini(ini)
+        except configparser.Error:
+            continue
         for name, path, marked_default in profiles:
             path_norm = os.path.normcase(str(path)).replace("\\", "/")
             name_match = name is not None and os.path.normcase(name) == value_norm

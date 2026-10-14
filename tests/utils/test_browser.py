@@ -133,3 +133,23 @@ class TestResolveFirefoxProfile:
 
     def test_no_ini_and_missing_dir_returns_none(self, tmp_path: Path):
         assert resolve_firefox_profile("nope", ini_path=tmp_path / "missing.ini") is None
+
+    def test_duplicate_section_ini_returns_none(self, tmp_path: Path):
+        ini = tmp_path / "profiles.ini"
+        duplicate = "\n[Profile0]\nName=default-release\nIsRelative=1\nPath=Profiles/urj13kw6.default-release\n"
+        ini.write_text(INI_CONTENT + duplicate, encoding="utf-8")
+        assert resolve_firefox_profile("default-release", ini_path=ini) is None
+
+    def test_absolute_path_in_ini(self, tmp_path: Path):
+        profile_dir = tmp_path / "absolute-profile"
+        profile_dir.mkdir()
+        ini = tmp_path / "profiles.ini"
+        ini.write_text(f"[Profile0]\nName=abs\nIsRelative=0\nPath={profile_dir}\n", encoding="utf-8")
+        resolved = resolve_firefox_profile("abs", ini_path=ini)
+        assert resolved is not None
+        assert resolved.path == profile_dir
+
+    def test_resolves_by_relative_folder_path(self, profiles_ini: Path):
+        resolved = resolve_firefox_profile("Profiles/ns5j57qn.default-release-1", ini_path=profiles_ini)
+        assert resolved is not None
+        assert resolved.name == "default-release-1"
