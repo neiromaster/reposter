@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from src.reposter.utils.browser import CookieSpec, parse_cookies_spec
+from src.reposter.utils.browser import CookieSpec, parse_cookies_spec, resolve_firefox_profile
 
 
 class TestParseCookiesSpec:
@@ -47,3 +47,89 @@ class TestParseCookiesSpec:
     def test_too_many_parts_rejected(self):
         with pytest.raises(ValueError, match="Некорректный формат"):
             parse_cookies_spec("firefox:a:b:c:d")
+
+
+INI_CONTENT = """
+[General]
+StartWithLastProfile=1
+Version=2
+
+[Profile0]
+Name=default-release
+IsRelative=1
+Path=Profiles/urj13kw6.default-release
+StoreID=4a201249
+ShowSelector=0
+
+[Profile3]
+Name=default-release-2
+IsRelative=1
+Path=Profiles/7143b68p.default-release-2
+
+[Profile2]
+Name=default-release-1
+IsRelative=1
+Path=Profiles/ns5j57qn.default-release-1
+StoreID=2a946dc1
+ShowSelector=0
+
+[Install71D58ADAB38A77EE]
+Default=Profiles/7143b68p.default-release-2
+Locked=1
+
+[Profile1]
+Name=default
+IsRelative=1
+Path=Profiles/p3asfmiv.default
+Default=1
+
+[Install308046B0AF4A39CB]
+Default=Profiles/urj13kw6.default-release
+Locked=1
+"""
+
+
+@pytest.fixture
+def profiles_ini(tmp_path: Path) -> Path:
+    ini = tmp_path / "profiles.ini"
+    ini.write_text(INI_CONTENT, encoding="utf-8")
+    return ini
+
+
+class TestResolveFirefoxProfile:
+    def test_resolves_by_name(self, profiles_ini: Path, tmp_path: Path):
+        resolved = resolve_firefox_profile("default-release-1", ini_path=profiles_ini)
+        assert resolved is not None
+        assert resolved.name == "default-release-1"
+        assert resolved.path == tmp_path / "Profiles" / "ns5j57qn.default-release-1"
+        assert resolved.is_default is False
+
+    def test_resolves_by_folder_name(self, profiles_ini: Path):
+        resolved = resolve_firefox_profile("7143b68p.default-release-2", ini_path=profiles_ini)
+        assert resolved is not None
+        assert resolved.is_default is True  # install-default секции Install71D58ADAB38A77EE
+
+    def test_resolves_marked_default(self, profiles_ini: Path):
+        resolved = resolve_firefox_profile("default", ini_path=profiles_ini)
+        assert resolved is not None
+        assert resolved.is_default is True  # Default=1 в [Profile1]
+
+    def test_unknown_value_returns_none(self, profiles_ini: Path):
+        assert resolve_firefox_profile("no-such-profile", ini_path=profiles_ini) is None
+
+    def test_absolute_path_value(self, profiles_ini: Path, tmp_path: Path):
+        value = str(tmp_path / "Profiles" / "ns5j57qn.default-release-1")
+        resolved = resolve_firefox_profile(value, ini_path=profiles_ini)
+        assert resolved is not None
+        assert resolved.name == "default-release-1"
+
+    def test_existing_directory_fallback(self, tmp_path: Path):
+        profile_dir = tmp_path / "custom-profile"
+        profile_dir.mkdir()
+        resolved = resolve_firefox_profile(str(profile_dir), ini_path=tmp_path / "missing.ini")
+        assert resolved is not None
+        assert resolved.name is None
+        assert resolved.is_default is False
+
+    def test_no_ini_and_missing_dir_returns_none(self, tmp_path: Path):
+        assert resolve_firefox_profile("nope", ini_path=tmp_path / "missing.ini") is None
