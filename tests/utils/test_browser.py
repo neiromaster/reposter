@@ -2,7 +2,16 @@ from pathlib import Path
 
 import pytest
 
-from src.reposter.utils.browser import CookieSpec, parse_cookies_spec, resolve_firefox_profile
+from src.reposter.utils import browser as browser_module
+from src.reposter.utils.browser import (
+    CookieSpec,
+    ResolvedFirefoxProfile,
+    firefox_profile_args,
+    is_firefox_main_process,
+    matches_firefox_profile_argv,
+    parse_cookies_spec,
+    resolve_firefox_profile,
+)
 
 
 class TestParseCookiesSpec:
@@ -153,3 +162,75 @@ class TestResolveFirefoxProfile:
         resolved = resolve_firefox_profile("Profiles/ns5j57qn.default-release-1", ini_path=profiles_ini)
         assert resolved is not None
         assert resolved.name == "default-release-1"
+
+
+class TestFirefoxProfileArgs:
+    def test_dash_p_with_value(self):
+        assert firefox_profile_args(["firefox.exe", "-P", "work"]) == ["work"]
+
+    def test_dash_p_joined(self):
+        assert firefox_profile_args(["firefox.exe", "-Pwork"]) == ["work"]
+
+    def test_double_dash_profile(self):
+        assert firefox_profile_args(["firefox.exe", "--profile", r"C:\prof"]) == [r"C:\prof"]
+
+    def test_double_dash_profile_eq(self):
+        assert firefox_profile_args(["firefox.exe", r"--profile=C:\prof"]) == [r"C:\prof"]
+
+    def test_profile_manager_ignored(self):
+        assert firefox_profile_args(["firefox.exe", "-ProfileManager"]) == []
+
+    def test_no_profile_args(self):
+        assert firefox_profile_args(["firefox.exe", "-no-remote"]) == []
+
+
+class TestIsFirefoxMainProcess:
+    def test_main_process(self):
+        assert is_firefox_main_process(["firefox.exe"]) is True
+
+    def test_content_proc_child(self):
+        assert is_firefox_main_process(["firefox.exe", "-contentproc", "12", "parentBuildID"]) is False
+
+
+class TestMatchesFirefoxProfileArgv:
+    @pytest.fixture
+    def resolved(self) -> ResolvedFirefoxProfile:
+        return ResolvedFirefoxProfile(
+            path=Path(r"C:\Users\t\AppData\Roaming\Mozilla\Firefox\Profiles\ns5j57qn.default-release-1"),
+            name="default-release-1",
+            is_default=False,
+        )
+
+    @pytest.fixture
+    def resolved_default(self) -> ResolvedFirefoxProfile:
+        return ResolvedFirefoxProfile(path=Path(r"C:\prof\p.default"), name="p.default", is_default=True)
+
+    def test_flagged_instance_matches(self, resolved: ResolvedFirefoxProfile, monkeypatch):
+        monkeypatch.setattr(
+            browser_module,
+            "resolve_firefox_profile",
+            lambda value, ini_path=None: resolved if value == "default-release-1" else None,
+        )
+        argv = ["firefox.exe", "-P", "default-release-1"]
+        assert matches_firefox_profile_argv(argv, resolved) is True
+
+    def test_other_profile_flag_does_not_match(self, resolved: ResolvedFirefoxProfile, monkeypatch):
+        monkeypatch.setattr(browser_module, "resolve_firefox_profile", lambda value, ini_path=None: None)
+        argv = ["firefox.exe", "-P", "default-release-2"]
+        assert matches_firefox_profile_argv(argv, resolved) is False
+
+    def test_profile_path_flag_matches(self, resolved: ResolvedFirefoxProfile, monkeypatch):
+        monkeypatch.setattr(browser_module, "resolve_firefox_profile", lambda value, ini_path=None: None)
+        argv = ["firefox.exe", "--profile", str(resolved.path)]
+        assert matches_firefox_profile_argv(argv, resolved) is True
+
+    def test_child_process_never_matches(self, resolved: ResolvedFirefoxProfile, monkeypatch):
+        monkeypatch.setattr(browser_module, "resolve_firefox_profile", lambda value, ini_path=None: None)
+        argv = ["firefox.exe", "-contentproc", "1", "-P", "default-release-1"]
+        assert matches_firefox_profile_argv(argv, resolved) is False
+
+    def test_flagless_non_default_not_matched(self, resolved: ResolvedFirefoxProfile):
+        assert matches_firefox_profile_argv(["firefox.exe"], resolved) is False
+
+    def test_flagless_default_matched(self, resolved_default: ResolvedFirefoxProfile):
+        assert matches_firefox_profile_argv(["firefox.exe"], resolved_default) is True

@@ -22,6 +22,8 @@ _COOKIE_SPEC_RE: Final[re.Pattern[str]] = re.compile(
 
 SUPPORTED_BROWSERS: Final[tuple[str, ...]] = ("chrome", "firefox", "edge")
 
+_FIREFOX_NON_PROFILE_P_FLAGS: Final[frozenset[str]] = frozenset({"-ProfileManager", "-CreateProfile"})
+
 
 @dataclass(frozen=True)
 class CookieSpec:
@@ -153,3 +155,43 @@ def resolve_firefox_profile(value: str, ini_path: Path | None = None) -> Resolve
     if direct.is_dir():
         return ResolvedFirefoxProfile(direct.resolve(), None, False)
     return None
+
+
+def firefox_profile_args(argv: list[str]) -> list[str]:
+    """Extracts profile values from a Firefox command line (-P name, -Pname, --profile path)."""
+    values: list[str] = []
+    for i, arg in enumerate(argv):
+        if arg in _FIREFOX_NON_PROFILE_P_FLAGS:
+            continue
+        if arg in ("-P", "-p", "--profile") and i + 1 < len(argv):
+            values.append(argv[i + 1])
+        elif arg.startswith("-P") and len(arg) > 2:
+            values.append(arg[2:])
+        elif arg.startswith("--profile="):
+            values.append(arg.split("=", 1)[1])
+    return values
+
+
+def is_firefox_main_process(argv: list[str]) -> bool:
+    """Firefox content (child) processes are spawned with -contentproc on their command line."""
+    return "-contentproc" not in argv
+
+
+def matches_firefox_profile_argv(argv: list[str], resolved: ResolvedFirefoxProfile) -> bool:
+    """True when the command line belongs to a main Firefox process running the resolved profile."""
+    if not is_firefox_main_process(argv):
+        return False
+
+    profile_values = firefox_profile_args(argv)
+    if not profile_values:
+        # A profile-less launch opens the install-default profile
+        return resolved.is_default
+
+    for value in profile_values:
+        candidate = resolve_firefox_profile(value)
+        if candidate is not None:
+            if _same_path(candidate.path, resolved.path):
+                return True
+        elif _same_path(Path(value), resolved.path):
+            return True
+    return False
