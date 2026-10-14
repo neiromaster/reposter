@@ -247,7 +247,7 @@ async def test_restart_firefox_profile_closes_only_matching(
     with (
         patch("src.reposter.utils.browser._firefox_profiles_ini_paths", return_value=(fake_ini,)),
         patch("psutil.process_iter", return_value=[target, other]),
-        patch("subprocess.run"),
+        patch("subprocess.run") as mock_run,
         patch("subprocess.Popen") as mock_popen,
         patch("asyncio.sleep", AsyncMock()),
     ):
@@ -263,6 +263,7 @@ async def test_restart_firefox_profile_closes_only_matching(
     )
     target.wait.assert_called()
     other.wait.assert_not_called()  # чужой профиль не тронут
+    assert mock_run.call_count == 2  # цель закрывается в обоих проходах
 
 
 @pytest.mark.asyncio
@@ -290,6 +291,33 @@ async def test_restart_falls_back_to_whole_browser_when_profile_unresolved(
         await ytdlp_manager.restart_browser()
 
     mock_popen.assert_called_once_with([BROWSER_EXECUTABLES["firefox"]])
+
+
+@pytest.mark.asyncio
+async def test_warns_when_process_survives_close(ytdlp_manager: YTDLPManager, settings: Settings):
+    """Test that a process surviving graceful close logs the elevated-rights warning."""
+    settings.downloader.cookie_spec = CookieSpec(browser="chrome")
+    ytdlp_manager._downloader_config = settings.downloader
+
+    proc = Mock()
+    proc.info = {"name": BROWSER_EXECUTABLES["chrome"]}
+    proc.cmdline.return_value = []
+    proc.children.return_value = []
+    proc.pid = 4242
+    proc.is_running.return_value = True
+    proc.wait = Mock()
+
+    with (
+        patch("psutil.process_iter", return_value=[proc]),
+        patch("subprocess.run"),
+        patch("subprocess.Popen"),
+        patch("asyncio.sleep", AsyncMock()),
+        patch("src.reposter.managers.ytdlp_manager.log") as mock_log,
+    ):
+        await ytdlp_manager.restart_browser()
+
+    survivor_warning = "⚠️ Процесс 4242 не удалось закрыть — возможно, браузер запущен от администратора."
+    mock_log.assert_any_call(survivor_warning, indent=4)
 
 
 @pytest.mark.asyncio
