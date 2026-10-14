@@ -158,17 +158,25 @@ def resolve_firefox_profile(value: str, ini_path: Path | None = None) -> Resolve
 
 
 def firefox_profile_args(argv: list[str]) -> list[str]:
-    """Extracts profile values from a Firefox command line (-P name, -Pname, --profile path)."""
+    """Extracts profile values from a Firefox command line (-P name, -p name, --profile path, --profile=path).
+
+    The joined -Pname form and the lowercase -p are kept as defensive parsing,
+    not real Firefox grammar. Empty values are skipped: Firefox ignores a bare
+    --profile= and launches the default profile.
+    """
     values: list[str] = []
     for i, arg in enumerate(argv):
         if arg in _FIREFOX_NON_PROFILE_P_FLAGS:
             continue
+        value: str | None = None
         if arg in ("-P", "-p", "--profile") and i + 1 < len(argv):
-            values.append(argv[i + 1])
+            value = argv[i + 1]
         elif arg.startswith("-P") and len(arg) > 2:
-            values.append(arg[2:])
+            value = arg[2:]
         elif arg.startswith("--profile="):
-            values.append(arg.split("=", 1)[1])
+            value = arg.split("=", 1)[1]
+        if value is not None and value.strip():
+            values.append(value)
     return values
 
 
@@ -184,7 +192,9 @@ def matches_firefox_profile_argv(argv: list[str], resolved: ResolvedFirefoxProfi
 
     profile_values = firefox_profile_args(argv)
     if not profile_values:
-        # A profile-less launch opens the install-default profile
+        # A profile-less launch opens the install-default profile. Known
+        # limitation: with multiple installs every install-default matches
+        # (no default-install registry lookup here).
         return resolved.is_default
 
     for value in profile_values:

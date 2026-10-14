@@ -1,3 +1,4 @@
+import sys
 from pathlib import Path
 
 import pytest
@@ -183,6 +184,18 @@ class TestFirefoxProfileArgs:
     def test_no_profile_args(self):
         assert firefox_profile_args(["firefox.exe", "-no-remote"]) == []
 
+    def test_lowercase_p_accepted(self):
+        assert firefox_profile_args(["firefox.exe", "-p", "work"]) == ["work"]
+
+    def test_create_profile_next_arg_not_swallowed(self):
+        assert firefox_profile_args(["firefox.exe", "-CreateProfile", "newprof"]) == []
+
+    def test_final_p_token_without_value(self):
+        assert firefox_profile_args(["firefox.exe", "-P"]) == []
+
+    def test_empty_profile_value_skipped(self):
+        assert firefox_profile_args(["firefox.exe", "--profile="]) == []
+
 
 class TestIsFirefoxMainProcess:
     def test_main_process(self):
@@ -234,3 +247,9 @@ class TestMatchesFirefoxProfileArgv:
 
     def test_flagless_default_matched(self, resolved_default: ResolvedFirefoxProfile):
         assert matches_firefox_profile_argv(["firefox.exe"], resolved_default) is True
+
+    @pytest.mark.skipif(sys.platform != "win32", reason="normcase folds case only on Windows")
+    def test_profile_path_flag_case_insensitive_on_windows(self, resolved: ResolvedFirefoxProfile, monkeypatch):
+        monkeypatch.setattr(browser_module, "resolve_firefox_profile", lambda value, ini_path=None: None)
+        argv = ["firefox.exe", "--profile", str(resolved.path).upper()]
+        assert matches_firefox_profile_argv(argv, resolved) is True
