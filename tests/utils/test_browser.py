@@ -9,7 +9,8 @@ class TestParseCookiesSpec:
     def test_browser_only(self):
         assert parse_cookies_spec("firefox") == CookieSpec(browser="firefox")
 
-    def test_browser_and_profile(self):
+    def test_browser_and_profile(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.chdir(tmp_path)
         assert parse_cookies_spec("firefox:default-release-1") == CookieSpec(
             browser="firefox", profile="default-release-1"
         )
@@ -29,7 +30,8 @@ class TestParseCookiesSpec:
         parsed = parse_cookies_spec(f"firefox:{tmp_path}")
         assert parsed == CookieSpec(browser="firefox", profile=str(tmp_path))
 
-    def test_missing_path_split_like_ytdlp(self):
+    def test_missing_path_split_like_ytdlp(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.chdir(tmp_path)
         # Не существующий путь — режем по ':' ровно как yt-dlp
         parsed = parse_cookies_spec(r"firefox:C:\nope\profile")
         assert parsed == CookieSpec(browser="firefox", profile="C", keyring=r"\nope\profile")
@@ -41,3 +43,7 @@ class TestParseCookiesSpec:
     def test_unknown_browser_rejected(self):
         with pytest.raises(ValueError, match="Неподдерживаемый браузер"):
             parse_cookies_spec("lynx:default")
+
+    def test_too_many_parts_rejected(self):
+        with pytest.raises(ValueError, match="Некорректный формат"):
+            parse_cookies_spec("firefox:a:b:c:d")
