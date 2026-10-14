@@ -108,7 +108,7 @@ downloader:
   browser_restart_wait_seconds: 30 # Wait time after browser restart.
 ```
 
-The `browser` field is deprecated: when `cookies_from_browser` is not set it is used as before (without a profile). The profile accepts any form — the Firefox profile name (as in `-P`), the profile folder name, or a path; the app resolves it via `profiles.ini` itself.
+The `browser` field is deprecated: when `cookies_from_browser` is not set it is used as before (without a profile). The Firefox profile accepts any form — the Firefox profile name (as in `-P`), the profile folder name, or a path; the app resolves it via `profiles.ini` itself. For Firefox only the given profile is restarted; for Chrome/Edge the whole browser is restarted.
 
 ### Obtaining Tokens and Keys
 
