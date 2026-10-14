@@ -96,7 +96,9 @@ bindings:
 
 # --- Media downloader settings (yt-dlp) ---
 downloader:
-  browser: chrome # Browser for obtaining cookies (chrome, firefox, edge).
+  # Cookie source for yt-dlp and the restart target, same string as
+  # yt-dlp's --cookies-from-browser: browser[:profile[:keyring[:container]]]
+  cookies_from_browser: "firefox:default-release-1"
   output_path: downloads # Path for temporary media file downloads.
   yt_dlp_opts: # Additional options for yt-dlp (see yt-dlp documentation).
     format: bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best
@@ -105,6 +107,8 @@ downloader:
     delay_seconds: 10 # Delay between attempts (in seconds).
   browser_restart_wait_seconds: 30 # Wait time after browser restart.
 ```
+
+The `browser` field is deprecated: when `cookies_from_browser` is not set it is used as before (without a profile). The profile accepts any form — the Firefox profile name (as in `-P`), the profile folder name, or a path; the app resolves it via `profiles.ini` itself.
 
 ### Obtaining Tokens and Keys
 

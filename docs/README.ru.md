@@ -79,7 +79,9 @@ bindings:
 
 # --- Настройки загрузчика медиа (yt-dlp) ---
 downloader:
-  browser: chrome # Браузер для получения cookie (chrome, firefox, edge).
+  # Откуда брать cookie и какой профиль перезапускать. Формат как у
+  # --cookies-from-browser в yt-dlp: browser[:profile[:keyring[:container]]]
+  cookies_from_browser: "firefox:default-release-1"
   output_path: downloads # Путь для временных загрузок медиафайлов.
   yt_dlp_opts: # Дополнительные опции для yt-dlp (см. документацию yt-dlp).
     format: bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best
@@ -88,6 +90,8 @@ downloader:
     delay_seconds: 10 # Задержка между попытками (в секундах).
   browser_restart_wait_seconds: 30 # Время ожидания после перезапуска браузера.
 ```
+
+Поле `browser` устарело: если `cookies_from_browser` не задан, используется оно (без профиля). Профиль понимается в любом виде: имя из Firefox (`-P`), имя папки профиля или путь — приложение само резолвит его через `profiles.ini`.
 
 ### Получение токенов и ключей
 
