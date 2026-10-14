@@ -8,7 +8,7 @@ import pytest
 
 from src.reposter.config.settings import DownloaderConfig, RetryConfig, Settings
 from src.reposter.managers.ytdlp_manager import BROWSER_EXECUTABLES, YTDLPManager
-from src.reposter.utils.browser import CookieSpec
+from src.reposter.utils.browser import CookieSpec, ResolvedFirefoxProfile
 
 
 @pytest.fixture
@@ -29,6 +29,7 @@ def settings():
     mock_settings.downloader.yt_dlp_opts = {}
     mock_settings.downloader.retries = RetryConfig(count=2, delay_seconds=1)
     mock_settings.downloader.cookies_from_browser = "firefox:default-release-1"
+    # cookie_spec is a @property: Mock(spec=) doesn't invoke getters, so set a real value.
     mock_settings.downloader.cookie_spec = CookieSpec(browser="firefox", profile="default-release-1")
     mock_settings.downloader.browser = "firefox"
     mock_settings.downloader.browser_restart_wait_seconds = 1
@@ -175,51 +176,120 @@ async def test_restart_browser_no_config(ytdlp_manager: YTDLPManager):
 
 
 @pytest.mark.asyncio
-async def test_restart_browser_unsupported_browser(ytdlp_manager: YTDLPManager, settings: Settings):
-    """Test restart_browser with unsupported browser."""
-    # Arrange
-    # We can't easily change the browser enum, so we'll test with a valid browser that gets filtered out
-    settings.downloader.browser = "chrome"  # Valid browser
+async def test_restart_browser_unknown_browser_noop(ytdlp_manager: YTDLPManager, settings: Settings):
+    """Test restart_browser does nothing for an unsupported browser."""
+    settings.downloader.cookie_spec = CookieSpec(browser="safari")
     ytdlp_manager._downloader_config = settings.downloader
-
-    # Mock subprocess.Popen to avoid actually starting a browser process
-    with patch("subprocess.Popen"):
-        # Act & Assert - Should not raise any exceptions
+    with patch("subprocess.Popen") as mock_popen:
         await ytdlp_manager.restart_browser()
+    mock_popen.assert_not_called()
 
 
 @pytest.mark.asyncio
-async def test_restart_browser_kills_processes(ytdlp_manager: YTDLPManager, settings: Settings):
-    """Test restart_browser properly kills existing browser processes."""
-    # Arrange
+async def test_restart_whole_browser_closes_gracefully(ytdlp_manager: YTDLPManager, settings: Settings):
+    """Test whole-browser restart: graceful close before and after the refresh window."""
+    settings.downloader.cookie_spec = CookieSpec(browser="chrome")
     settings.downloader.browser = "chrome"
     ytdlp_manager._downloader_config = settings.downloader
 
-    # Create mock processes to be killed
-    mock_proc1 = Mock()
-    mock_proc1.info = {"name": BROWSER_EXECUTABLES["chrome"]}
-    mock_proc1.kill = Mock()
-    mock_proc1.wait = Mock()  # This is a synchronous method, not async
+    proc = Mock()
+    proc.info = {"name": BROWSER_EXECUTABLES["chrome"]}
+    proc.cmdline.return_value = []
+    proc.children.return_value = []
+    proc.pid = 4242
+    proc.wait = Mock()
 
-    mock_proc2 = Mock()
-    mock_proc2.info = {"name": BROWSER_EXECUTABLES["chrome"]}
-    mock_proc2.kill = Mock()
-    mock_proc2.wait = Mock()  # This is a synchronous method, not async
-
-    # Mock subprocess.Popen to avoid actually starting a browser process
     with (
-        patch("psutil.process_iter", return_value=[mock_proc1, mock_proc2]),
-        patch("subprocess.Popen"),
+        patch("psutil.process_iter", return_value=[proc]),
+        patch("subprocess.run") as mock_run,
+        patch("subprocess.Popen") as mock_popen,
         patch("asyncio.sleep", AsyncMock()),
     ):
-        # Act
         await ytdlp_manager.restart_browser()
 
-        # Assert
-        mock_proc1.kill.assert_called()
-        mock_proc1.wait.assert_called()
-        mock_proc2.kill.assert_called()
-        mock_proc2.wait.assert_called()
+    assert mock_run.call_count == 2  # закрытие до и после окна обновления cookie
+    assert mock_run.call_args.args[0] == ["taskkill", "/PID", "4242"]
+    mock_popen.assert_called_once_with([BROWSER_EXECUTABLES["chrome"]])
+
+
+@pytest.mark.asyncio
+async def test_restart_firefox_profile_closes_only_matching(
+    ytdlp_manager: YTDLPManager, settings: Settings, tmp_path: Path
+):
+    """Test profile restart: only the target profile instance is closed, launched with --profile."""
+    settings.downloader.cookie_spec = CookieSpec(browser="firefox", profile="default-release-1")
+    ytdlp_manager._downloader_config = settings.downloader
+    resolved = ResolvedFirefoxProfile(
+        path=tmp_path / "Profiles" / "ns5j57qn.default-release-1",
+        name="default-release-1",
+        is_default=False,
+    )
+
+    target = Mock()
+    target.info = {"name": BROWSER_EXECUTABLES["firefox"]}
+    target.cmdline.return_value = [r"C:\Program Files\Mozilla Firefox\firefox.exe", "-P", "default-release-1"]
+    target.exe.return_value = r"C:\Program Files\Mozilla Firefox\firefox.exe"
+    target.children.return_value = []
+    target.pid = 111
+    target.wait = Mock()
+
+    other = Mock()
+    other.info = {"name": BROWSER_EXECUTABLES["firefox"]}
+    other.cmdline.return_value = [r"C:\Program Files\Mozilla Firefox\firefox.exe", "-P", "default-release-2"]
+    other.children.return_value = []
+
+    fake_ini = tmp_path / "profiles.ini"
+    fake_ini.write_text(
+        "[Profile0]\nName=default-release-1\nIsRelative=1\nPath=Profiles/ns5j57qn.default-release-1\n",
+        encoding="utf-8",
+    )
+
+    with (
+        patch("src.reposter.utils.browser._firefox_profiles_ini_paths", return_value=(fake_ini,)),
+        patch("psutil.process_iter", return_value=[target, other]),
+        patch("subprocess.run"),
+        patch("subprocess.Popen") as mock_popen,
+        patch("asyncio.sleep", AsyncMock()),
+    ):
+        await ytdlp_manager.restart_browser()
+
+    mock_popen.assert_called_once_with(
+        [
+            r"C:\Program Files\Mozilla Firefox\firefox.exe",
+            "--profile",
+            str(resolved.path),
+            "--allow-downgrade",
+        ]
+    )
+    target.wait.assert_called()
+    other.wait.assert_not_called()  # чужой профиль не тронут
+
+
+@pytest.mark.asyncio
+async def test_restart_falls_back_to_whole_browser_when_profile_unresolved(
+    ytdlp_manager: YTDLPManager, settings: Settings, tmp_path: Path
+):
+    """Test fallback: unresolvable profile restarts the whole browser without flags."""
+    settings.downloader.cookie_spec = CookieSpec(browser="firefox", profile="ghost-profile")
+    ytdlp_manager._downloader_config = settings.downloader
+
+    proc = Mock()
+    proc.info = {"name": BROWSER_EXECUTABLES["firefox"]}
+    proc.cmdline.return_value = []
+    proc.children.return_value = []
+    proc.pid = 111
+    proc.wait = Mock()
+
+    with (
+        patch("src.reposter.utils.browser._firefox_profiles_ini_paths", return_value=(tmp_path / "missing.ini",)),
+        patch("psutil.process_iter", return_value=[proc]),
+        patch("subprocess.run"),
+        patch("subprocess.Popen") as mock_popen,
+        patch("asyncio.sleep", AsyncMock()),
+    ):
+        await ytdlp_manager.restart_browser()
+
+    mock_popen.assert_called_once_with([BROWSER_EXECUTABLES["firefox"]])
 
 
 @pytest.mark.asyncio

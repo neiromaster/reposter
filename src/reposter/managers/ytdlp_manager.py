@@ -4,6 +4,7 @@ import asyncio
 import subprocess
 import sys
 from asyncio import Event
+from collections.abc import Callable
 from multiprocessing import Process, Queue
 from pathlib import Path
 from types import TracebackType
@@ -14,7 +15,14 @@ import yt_dlp
 
 from ..config.settings import DownloaderConfig, Settings
 from ..interfaces.base_manager import BaseManager
-from ..utils.browser import resolve_cookie_profile
+from ..utils.browser import (
+    ResolvedFirefoxProfile,
+    close_process_tree_gracefully,
+    is_firefox_main_process,
+    matches_firefox_profile_argv,
+    resolve_cookie_profile,
+    resolve_firefox_profile,
+)
 from ..utils.log import log
 
 BROWSER_EXECUTABLES = (
@@ -45,6 +53,16 @@ def _ytdlp_worker(url: str, opts: dict[str, Any], out_q: Queue[Result]) -> None:
         pass  # Suppress traceback on Ctrl+C
     except Exception as e:
         out_q.put(("error", str(e)))
+
+
+def _warn_if_still_running(proc: psutil.Process) -> None:
+    """Warns when a browser process survived the graceful close (e.g. elevated Firefox)."""
+    try:
+        alive = proc.is_running()
+    except psutil.Error:
+        return
+    if alive:
+        log(f"⚠️ Процесс {proc.pid} не удалось закрыть — возможно, браузер запущен от администратора.", indent=4)
 
 
 class YTDLPManager(BaseManager):
@@ -89,7 +107,7 @@ class YTDLPManager(BaseManager):
         """Builds yt-dlp options, resolving the cookie source into a cookiesfrombrowser tuple."""
         browser, profile, keyring, container = resolve_cookie_profile(config.cookie_spec)
         return {
-            **dict(config.yt_dlp_opts),
+            **config.yt_dlp_opts,
             "outtmpl": str(config.output_path / "%(id)s.%(ext)s"),
             "cookiesfrombrowser": (browser, profile, keyring, container),
             "quiet": True,
@@ -125,34 +143,88 @@ class YTDLPManager(BaseManager):
         self._active_proc = None
 
     async def restart_browser(self) -> None:
-        """Restarts the browser to update cookies."""
+        """Restarts the browser — only the target Firefox profile when one is configured."""
         if not self._downloader_config:
             log("⚠️ Конфигурация загрузчика не установлена.", indent=4)
             return
 
-        browser_name = self._downloader_config.browser
-        executable = BROWSER_EXECUTABLES.get(browser_name)
+        config = self._downloader_config
+        spec = config.cookie_spec
+        executable = BROWSER_EXECUTABLES.get(spec.browser)
         if not executable:
-            log(f"⚠️ Браузер {browser_name} не поддерживается для перезапуска.", indent=4)
+            log(f"⚠️ Браузер {spec.browser} не поддерживается для перезапуска.", indent=4)
             return
 
-        log(f"🔄 Перезапускаю {browser_name} для обновления cookie...", indent=4)
+        resolved: ResolvedFirefoxProfile | None = None
+        if spec.browser == "firefox" and spec.profile is not None:
+            resolved = resolve_firefox_profile(spec.profile)
+            if resolved is None:
+                msg = f"⚠️ Профиль Firefox {spec.profile!r} не найден в profiles.ini — перезапускаю весь браузер."
+                log(msg, indent=4)
 
-        for proc in psutil.process_iter(["name"]):
-            if proc.info["name"] == executable:
-                await asyncio.to_thread(proc.kill)
-                await asyncio.to_thread(proc.wait)
+        target = f"{spec.browser} (профиль {resolved.name or resolved.path.name})" if resolved else spec.browser
+        log(f"🔄 Перезапускаю {target} для обновления cookie...", indent=4)
+
+        if resolved is not None:
+            await self._restart_firefox_profile(executable, resolved)
+        else:
+            await self._restart_whole_browser(executable)
+
+        log("✅ Перезапуск завершен.", indent=4)
+
+    async def _collect_browser_processes(
+        self, executable: str, predicate: Callable[[list[str]], bool]
+    ) -> list[psutil.Process]:
+        """Finds browser processes by executable name whose command line satisfies the predicate."""
+
+        def _collect() -> list[psutil.Process]:
+            matched: list[psutil.Process] = []
+            for proc in psutil.process_iter(["name"]):
+                if proc.info["name"] != executable:
+                    continue
+                try:
+                    argv = proc.cmdline()
+                except psutil.Error:
+                    continue
+                if predicate(argv):
+                    matched.append(proc)
+            return matched
+
+        return await asyncio.to_thread(_collect)
+
+    async def _restart_whole_browser(self, executable: str) -> None:
+        for proc in await self._collect_browser_processes(executable, lambda _argv: True):
+            await asyncio.to_thread(close_process_tree_gracefully, proc)
+            _warn_if_still_running(proc)
 
         await asyncio.to_thread(subprocess.Popen, [executable])
         await asyncio.sleep(self._downloader_config.browser_restart_wait_seconds)
 
-        for proc in psutil.process_iter(["name"]):
-            if proc.info["name"] == executable:
-                await asyncio.to_thread(proc.kill)
-                await asyncio.to_thread(proc.wait)
-                break
+        for proc in await self._collect_browser_processes(executable, lambda _argv: True):
+            await asyncio.to_thread(close_process_tree_gracefully, proc)
+            _warn_if_still_running(proc)
 
-        log("✅ Перезапуск завершен.", indent=4)
+    async def _restart_firefox_profile(self, executable: str, resolved: ResolvedFirefoxProfile) -> None:
+        def _is_target(argv: list[str]) -> bool:
+            return is_firefox_main_process(argv) and matches_firefox_profile_argv(argv, resolved)
+
+        exe_path: str | None = None
+        for proc in await self._collect_browser_processes(executable, _is_target):
+            if exe_path is None:
+                try:
+                    exe_path = proc.exe()
+                except (psutil.Error, OSError):
+                    exe_path = None
+            await asyncio.to_thread(close_process_tree_gracefully, proc)
+            _warn_if_still_running(proc)
+
+        launch_args = [exe_path or executable, "--profile", str(resolved.path), "--allow-downgrade"]
+        await asyncio.to_thread(subprocess.Popen, launch_args)
+        await asyncio.sleep(self._downloader_config.browser_restart_wait_seconds)
+
+        for proc in await self._collect_browser_processes(executable, _is_target):
+            await asyncio.to_thread(close_process_tree_gracefully, proc)
+            _warn_if_still_running(proc)
 
     async def download_video(self, video_url: str) -> Path | None:
         """
