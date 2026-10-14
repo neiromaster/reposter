@@ -10,10 +10,13 @@ from __future__ import annotations
 import configparser
 import os
 import re
+import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
+
+import psutil
 
 _COOKIE_SPEC_RE: Final[re.Pattern[str]] = re.compile(
     r"^(?P<browser>[^:]+)"
@@ -21,6 +24,8 @@ _COOKIE_SPEC_RE: Final[re.Pattern[str]] = re.compile(
 )
 
 SUPPORTED_BROWSERS: Final[tuple[str, ...]] = ("chrome", "firefox", "edge")
+
+GRACEFUL_CLOSE_TIMEOUT_SECONDS: Final[float] = 10.0
 
 _FIREFOX_NON_PROFILE_P_FLAGS: Final[frozenset[str]] = frozenset({"-ProfileManager", "-CreateProfile"})
 
@@ -205,3 +210,43 @@ def matches_firefox_profile_argv(argv: list[str], resolved: ResolvedFirefoxProfi
         elif _same_path(Path(value), resolved.path):
             return True
     return False
+
+
+def close_process_gracefully(proc: psutil.Process, timeout: float = GRACEFUL_CLOSE_TIMEOUT_SECONDS) -> None:
+    """Asks the process to exit cleanly (WM_CLOSE via taskkill on Windows, SIGTERM elsewhere)
+    and force-kills it if it does not exit within the timeout."""
+    try:
+        if sys.platform == "win32":
+            subprocess.run(
+                ["taskkill", "/PID", str(proc.pid)],
+                check=False,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        else:
+            proc.terminate()
+    except (psutil.Error, OSError):
+        pass
+
+    try:
+        proc.wait(timeout=timeout)
+        return
+    except psutil.Error:
+        pass
+
+    try:
+        proc.kill()
+        proc.wait(timeout=2.0)
+    except psutil.Error:
+        pass
+
+
+def close_process_tree_gracefully(proc: psutil.Process, timeout: float = GRACEFUL_CLOSE_TIMEOUT_SECONDS) -> None:
+    """Closes the process and its descendants; children normally exit once the parent is gone."""
+    try:
+        children = proc.children(recursive=True)
+    except psutil.Error:
+        children = []
+    close_process_gracefully(proc, timeout)
+    for child in children:
+        close_process_gracefully(child, timeout=2.0)
