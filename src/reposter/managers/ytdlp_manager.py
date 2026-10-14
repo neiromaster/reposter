@@ -212,7 +212,7 @@ class YTDLPManager(BaseManager):
         for proc in await self._collect_browser_processes(executable, _is_target):
             if exe_path is None:
                 try:
-                    exe_path = proc.exe()
+                    exe_path = await asyncio.to_thread(proc.exe)
                 except (psutil.Error, OSError):
                     exe_path = None
             await asyncio.to_thread(close_process_tree_gracefully, proc)
