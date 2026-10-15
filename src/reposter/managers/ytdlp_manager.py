@@ -166,9 +166,9 @@ class YTDLPManager(BaseManager):
         log(f"🔄 Перезапускаю {target} для обновления cookie...", indent=4)
 
         if resolved is not None:
-            await self._restart_firefox_profile(executable, resolved)
+            await self._restart_firefox_profile(config, executable, resolved)
         else:
-            await self._restart_whole_browser(executable)
+            await self._restart_whole_browser(config, executable)
 
         log("✅ Перезапуск завершен.", indent=4)
 
@@ -192,19 +192,21 @@ class YTDLPManager(BaseManager):
 
         return await asyncio.to_thread(_collect)
 
-    async def _restart_whole_browser(self, executable: str) -> None:
+    async def _restart_whole_browser(self, config: DownloaderConfig, executable: str) -> None:
         for proc in await self._collect_browser_processes(executable, lambda _argv: True):
             await asyncio.to_thread(close_process_tree_gracefully, proc)
             _warn_if_still_running(proc)
 
         await asyncio.to_thread(subprocess.Popen, [executable])
-        await asyncio.sleep(self._downloader_config.browser_restart_wait_seconds)
+        await asyncio.sleep(config.browser_restart_wait_seconds)
 
         for proc in await self._collect_browser_processes(executable, lambda _argv: True):
             await asyncio.to_thread(close_process_tree_gracefully, proc)
             _warn_if_still_running(proc)
 
-    async def _restart_firefox_profile(self, executable: str, resolved: ResolvedFirefoxProfile) -> None:
+    async def _restart_firefox_profile(
+        self, config: DownloaderConfig, executable: str, resolved: ResolvedFirefoxProfile
+    ) -> None:
         def _is_target(argv: list[str]) -> bool:
             return is_firefox_main_process(argv) and matches_firefox_profile_argv(argv, resolved)
 
@@ -220,7 +222,7 @@ class YTDLPManager(BaseManager):
 
         launch_args = [exe_path or executable, "--profile", str(resolved.path), "--allow-downgrade"]
         await asyncio.to_thread(subprocess.Popen, launch_args)
-        await asyncio.sleep(self._downloader_config.browser_restart_wait_seconds)
+        await asyncio.sleep(config.browser_restart_wait_seconds)
 
         for proc in await self._collect_browser_processes(executable, _is_target):
             await asyncio.to_thread(close_process_tree_gracefully, proc)

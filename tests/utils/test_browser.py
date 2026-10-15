@@ -223,27 +223,30 @@ class TestMatchesFirefoxProfileArgv:
     def resolved_default(self) -> ResolvedFirefoxProfile:
         return ResolvedFirefoxProfile(path=Path(r"C:\prof\p.default"), name="p.default", is_default=True)
 
-    def test_flagged_instance_matches(self, resolved: ResolvedFirefoxProfile, monkeypatch):
-        monkeypatch.setattr(
-            browser_module,
-            "resolve_firefox_profile",
-            lambda value, ini_path=None: resolved if value == "default-release-1" else None,
-        )
+    @staticmethod
+    def _fake_resolver(resolved: ResolvedFirefoxProfile | None):
+        def _resolve(value: str, ini_path: Path | None = None) -> ResolvedFirefoxProfile | None:
+            return resolved if value == "default-release-1" else None
+
+        return _resolve
+
+    def test_flagged_instance_matches(self, resolved: ResolvedFirefoxProfile, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.setattr(browser_module, "resolve_firefox_profile", self._fake_resolver(resolved))
         argv = ["firefox.exe", "-P", "default-release-1"]
         assert matches_firefox_profile_argv(argv, resolved) is True
 
-    def test_other_profile_flag_does_not_match(self, resolved: ResolvedFirefoxProfile, monkeypatch):
-        monkeypatch.setattr(browser_module, "resolve_firefox_profile", lambda value, ini_path=None: None)
+    def test_other_profile_flag_does_not_match(self, resolved: ResolvedFirefoxProfile, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.setattr(browser_module, "resolve_firefox_profile", self._fake_resolver(None))
         argv = ["firefox.exe", "-P", "default-release-2"]
         assert matches_firefox_profile_argv(argv, resolved) is False
 
-    def test_profile_path_flag_matches(self, resolved: ResolvedFirefoxProfile, monkeypatch):
-        monkeypatch.setattr(browser_module, "resolve_firefox_profile", lambda value, ini_path=None: None)
+    def test_profile_path_flag_matches(self, resolved: ResolvedFirefoxProfile, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.setattr(browser_module, "resolve_firefox_profile", self._fake_resolver(None))
         argv = ["firefox.exe", "--profile", str(resolved.path)]
         assert matches_firefox_profile_argv(argv, resolved) is True
 
-    def test_child_process_never_matches(self, resolved: ResolvedFirefoxProfile, monkeypatch):
-        monkeypatch.setattr(browser_module, "resolve_firefox_profile", lambda value, ini_path=None: None)
+    def test_child_process_never_matches(self, resolved: ResolvedFirefoxProfile, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.setattr(browser_module, "resolve_firefox_profile", self._fake_resolver(None))
         argv = ["firefox.exe", "-contentproc", "1", "-P", "default-release-1"]
         assert matches_firefox_profile_argv(argv, resolved) is False
 
@@ -254,8 +257,10 @@ class TestMatchesFirefoxProfileArgv:
         assert matches_firefox_profile_argv(["firefox.exe"], resolved_default) is True
 
     @pytest.mark.skipif(sys.platform != "win32", reason="normcase folds case only on Windows")
-    def test_profile_path_flag_case_insensitive_on_windows(self, resolved: ResolvedFirefoxProfile, monkeypatch):
-        monkeypatch.setattr(browser_module, "resolve_firefox_profile", lambda value, ini_path=None: None)
+    def test_profile_path_flag_case_insensitive_on_windows(
+        self, resolved: ResolvedFirefoxProfile, monkeypatch: pytest.MonkeyPatch
+    ):
+        monkeypatch.setattr(browser_module, "resolve_firefox_profile", self._fake_resolver(None))
         argv = ["firefox.exe", "--profile", str(resolved.path).upper()]
         assert matches_firefox_profile_argv(argv, resolved) is True
 
@@ -265,7 +270,7 @@ class TestCloseProcessGracefully:
         proc = Mock()
         proc.pid = 123
         proc.wait = Mock()
-        with patch("subprocess.run") as mock_run:
+        with patch("sys.platform", "win32"), patch("subprocess.run") as mock_run:
             close_process_gracefully(proc)
         mock_run.assert_called_once()
         assert mock_run.call_args.args[0] == ["taskkill", "/PID", "123"]
@@ -341,7 +346,9 @@ class TestCloseProcessTreeGracefully:
 
 
 class TestResolveCookieProfile:
-    def test_resolves_firefox_profile_to_path(self, profiles_ini: Path, tmp_path: Path, monkeypatch):
+    def test_resolves_firefox_profile_to_path(
+        self, profiles_ini: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
         monkeypatch.setattr(browser_module, "_firefox_profiles_ini_paths", lambda: (profiles_ini,))
         spec = CookieSpec(browser="firefox", profile="default-release-1")
         assert resolve_cookie_profile(spec) == (
@@ -351,7 +358,7 @@ class TestResolveCookieProfile:
             None,
         )
 
-    def test_unresolvable_profile_passed_through(self, tmp_path: Path, monkeypatch):
+    def test_unresolvable_profile_passed_through(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         monkeypatch.setattr(browser_module, "_firefox_profiles_ini_paths", lambda: (tmp_path / "missing.ini",))
         spec = CookieSpec(browser="firefox", profile="default-release-1")
         assert resolve_cookie_profile(spec) == ("firefox", "default-release-1", None, None)
@@ -360,7 +367,7 @@ class TestResolveCookieProfile:
         spec = CookieSpec(browser="chrome", profile="Profile 1")
         assert resolve_cookie_profile(spec) == ("chrome", "Profile 1", None, None)
 
-    def test_keyring_container_passthrough(self, profiles_ini: Path, tmp_path: Path, monkeypatch):
+    def test_keyring_container_passthrough(self, profiles_ini: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         monkeypatch.setattr(browser_module, "_firefox_profiles_ini_paths", lambda: (profiles_ini,))
         spec = CookieSpec(
             browser="firefox",

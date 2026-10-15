@@ -108,7 +108,7 @@ def _same_path(a: Path, b: Path) -> bool:
 def _read_profiles_ini(ini_path: Path) -> tuple[tuple[Path, ...], list[tuple[str | None, Path, bool]]]:
     """Returns (install_default_paths, [(name, path, marked_default), ...])."""
     parser = configparser.ConfigParser(interpolation=None)
-    parser.optionxform = str  # preserve key case (Name/Path/Default)
+    parser.optionxform = str  # type: ignore[reportAttributeAccessIssue]  # preserve key case (Name/Path/Default)
     parser.read(ini_path, encoding="utf-8-sig")
 
     install_defaults: list[Path] = []
