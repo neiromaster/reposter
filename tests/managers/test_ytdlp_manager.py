@@ -176,7 +176,7 @@ async def test_restart_browser_no_config(ytdlp_manager: YTDLPManager):
 
 
 @pytest.mark.asyncio
-async def test_restart_browser_unknown_browser_noop(ytdlp_manager: YTDLPManager, settings: Settings):
+async def test_restart_browser_unknown_browser_noop(ytdlp_manager: YTDLPManager, settings: Mock):
     """Test restart_browser does nothing for an unsupported browser."""
     settings.downloader.cookie_spec = CookieSpec(browser="safari")
     ytdlp_manager._downloader_config = settings.downloader
@@ -186,7 +186,7 @@ async def test_restart_browser_unknown_browser_noop(ytdlp_manager: YTDLPManager,
 
 
 @pytest.mark.asyncio
-async def test_restart_whole_browser_closes_gracefully(ytdlp_manager: YTDLPManager, settings: Settings):
+async def test_restart_whole_browser_closes_gracefully(ytdlp_manager: YTDLPManager, settings: Mock):
     """Test whole-browser restart: graceful close before and after the refresh window."""
     settings.downloader.cookie_spec = CookieSpec(browser="chrome")
     settings.downloader.browser = "chrome"
@@ -200,6 +200,7 @@ async def test_restart_whole_browser_closes_gracefully(ytdlp_manager: YTDLPManag
     proc.wait = Mock()
 
     with (
+        patch("sys.platform", "win32"),
         patch("psutil.process_iter", return_value=[proc]),
         patch("subprocess.run") as mock_run,
         patch("subprocess.Popen") as mock_popen,
@@ -214,7 +215,7 @@ async def test_restart_whole_browser_closes_gracefully(ytdlp_manager: YTDLPManag
 
 @pytest.mark.asyncio
 async def test_restart_firefox_profile_closes_only_matching(
-    ytdlp_manager: YTDLPManager, settings: Settings, tmp_path: Path
+    ytdlp_manager: YTDLPManager, settings: Mock, tmp_path: Path
 ):
     """Test profile restart: only the target profile instance is closed, launched with --profile."""
     settings.downloader.cookie_spec = CookieSpec(browser="firefox", profile="default-release-1")
@@ -245,6 +246,7 @@ async def test_restart_firefox_profile_closes_only_matching(
     )
 
     with (
+        patch("sys.platform", "win32"),
         patch("src.reposter.utils.browser._firefox_profiles_ini_paths", return_value=(fake_ini,)),
         patch("psutil.process_iter", return_value=[target, other]),
         patch("subprocess.run") as mock_run,
@@ -268,7 +270,7 @@ async def test_restart_firefox_profile_closes_only_matching(
 
 @pytest.mark.asyncio
 async def test_restart_falls_back_to_whole_browser_when_profile_unresolved(
-    ytdlp_manager: YTDLPManager, settings: Settings, tmp_path: Path
+    ytdlp_manager: YTDLPManager, settings: Mock, tmp_path: Path
 ):
     """Test fallback: unresolvable profile restarts the whole browser without flags."""
     settings.downloader.cookie_spec = CookieSpec(browser="firefox", profile="ghost-profile")
@@ -294,7 +296,7 @@ async def test_restart_falls_back_to_whole_browser_when_profile_unresolved(
 
 
 @pytest.mark.asyncio
-async def test_warns_when_process_survives_close(ytdlp_manager: YTDLPManager, settings: Settings):
+async def test_warns_when_process_survives_close(ytdlp_manager: YTDLPManager, settings: Mock):
     """Test that a process surviving graceful close logs the elevated-rights warning."""
     settings.downloader.cookie_spec = CookieSpec(browser="chrome")
     ytdlp_manager._downloader_config = settings.downloader
