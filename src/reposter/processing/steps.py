@@ -37,7 +37,7 @@ from ..models import (
     Video as VkVideo,
 )
 from ..utils.log import log
-from ..utils.text_utils import extract_tags_from_text, normalize_links
+from ..utils.text_utils import extract_tags_from_text, normalize_links, sanitize_filename
 
 
 class ProcessingStep(ABC):
@@ -210,13 +210,11 @@ class AttachmentDtoCreationStep(ProcessingStep):
             prepared_attachment = None
             match artifact:
                 case DownloadedVideoArtifact():
+                    fallback_name = f"{artifact.original_attachment.owner_id}_{artifact.original_attachment.id}"
+                    title = sanitize_filename(artifact.original_attachment.title or fallback_name) or fallback_name
                     prepared_attachment = PreparedVideoAttachment(
                         file_path=artifact.file_path,
-                        filename=(
-                            artifact.original_attachment.title
-                            or f"{artifact.original_attachment.owner_id}_{artifact.original_attachment.id}"
-                        )
-                        + artifact.file_path.suffix,
+                        filename=title + artifact.file_path.suffix,
                         width=artifact.width,
                         height=artifact.height,
                         thumbnail_path=artifact.thumbnail_path,
@@ -227,16 +225,18 @@ class AttachmentDtoCreationStep(ProcessingStep):
                         filename=artifact.file_path.stem + artifact.file_path.suffix,
                     )
                 case DownloadedAudioArtifact():
+                    audio_name = sanitize_filename(f"{artifact.artist} - {artifact.title}") or artifact.file_path.stem
                     prepared_attachment = PreparedAudioAttachment(
                         file_path=artifact.file_path,
-                        filename=f"{artifact.artist} - {artifact.title}" + artifact.file_path.suffix,
+                        filename=audio_name + artifact.file_path.suffix,
                         artist=artifact.artist,
                         title=artifact.title,
                     )
                 case DownloadedDocumentArtifact():
+                    doc_name = sanitize_filename(artifact.filename) or artifact.file_path.stem
                     prepared_attachment = PreparedDocumentAttachment(
                         file_path=artifact.file_path,
-                        filename=artifact.filename + artifact.file_path.suffix,
+                        filename=doc_name + artifact.file_path.suffix,
                     )
                 case _:
                     pass
