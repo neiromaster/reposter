@@ -19,11 +19,8 @@ jobs:
           - label: windows-x64
             runner: windows-latest
             python_arch: x64
-          - label: macos-x64
-            runner: macos-14
-            python_arch: x64
           - label: macos-arm64
-            runner: macos-14
+            runner: macos-15
             python_arch: arm64
 
     defaults:
