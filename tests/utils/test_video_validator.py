@@ -343,3 +343,89 @@ async def test_fatal_pattern_wins_over_returncode(tmp_path: Path):
     assert result.valid is False
     assert "nal units" in result.reason
     assert "завершился" not in result.reason
+
+
+@pytest.mark.asyncio
+async def test_decode_without_out_time_degrades_to_rc_and_end(tmp_path: Path):
+    """Design-documented degradation: no out_time at all -> verdict from rc + progress=end."""
+    video = tmp_path / "video.mp4"
+    video.write_bytes(b"x")
+    probe_proc = _make_proc(returncode=0, stdout=_probe_json("20.0", "20.0", "20.0"))
+    decode_proc = _make_proc(returncode=0, stdout=b"progress=end\n", stderr=b"")
+    with (
+        patch("src.reposter.utils.video_validator.shutil.which", return_value="/usr/bin/ffmpeg"),
+        patch(
+            "src.reposter.utils.video_validator.create_subprocess_exec",
+            new=AsyncMock(side_effect=[probe_proc, decode_proc]),
+        ),
+    ):
+        result = await validate_video_file(video)
+    assert result == ValidationResult(valid=True, skipped=False, reason="ok")
+
+
+@pytest.mark.asyncio
+async def test_out_time_ms_key_also_counts_microseconds(tmp_path: Path):
+    """out_time_ms carries MICROseconds despite the name — a /1000 'fix' would break this pin."""
+    video = tmp_path / "video.mp4"
+    video.write_bytes(b"x")
+    probe_proc = _make_proc(returncode=0, stdout=_probe_json("20.0", "20.0", "20.0"))
+    decode_proc = _make_proc(
+        returncode=0,
+        stdout=b"progress=continue\nout_time_ms=20000000\nprogress=end\n",
+        stderr=b"",
+    )
+    with (
+        patch("src.reposter.utils.video_validator.shutil.which", return_value="/usr/bin/ffmpeg"),
+        patch(
+            "src.reposter.utils.video_validator.create_subprocess_exec",
+            new=AsyncMock(side_effect=[probe_proc, decode_proc]),
+        ),
+    ):
+        result = await validate_video_file(video)
+    assert result == ValidationResult(valid=True, skipped=False, reason="ok")
+
+
+@pytest.mark.asyncio
+async def test_within_tolerance_decode_is_valid(tmp_path: Path):
+    """19.5s decoded of a 20.0s container is inside tolerance -> valid (tolerance is not zero)."""
+    video = tmp_path / "video.mp4"
+    video.write_bytes(b"x")
+    probe_proc = _make_proc(returncode=0, stdout=_probe_json("20.0", "20.0", "20.0"))
+    decode_proc = _make_proc(
+        returncode=0,
+        stdout=b"progress=continue\nout_time_us=19500000\nprogress=end\n",
+        stderr=b"",
+    )
+    with (
+        patch("src.reposter.utils.video_validator.shutil.which", return_value="/usr/bin/ffmpeg"),
+        patch(
+            "src.reposter.utils.video_validator.create_subprocess_exec",
+            new=AsyncMock(side_effect=[probe_proc, decode_proc]),
+        ),
+    ):
+        result = await validate_video_file(video)
+    assert result == ValidationResult(valid=True, skipped=False, reason="ok")
+
+
+@pytest.mark.asyncio
+async def test_decode_longer_than_container_invalid_with_neutral_reason(tmp_path: Path):
+    """Decoded duration exceeding the container (header under-report) -> invalid, neutral wording."""
+    video = tmp_path / "video.mp4"
+    video.write_bytes(b"x")
+    probe_proc = _make_proc(returncode=0, stdout=_probe_json("20.0", "20.0", "20.0"))
+    decode_proc = _make_proc(
+        returncode=0,
+        stdout=b"progress=continue\nout_time_us=25000000\nprogress=end\n",
+        stderr=b"",
+    )
+    with (
+        patch("src.reposter.utils.video_validator.shutil.which", return_value="/usr/bin/ffmpeg"),
+        patch(
+            "src.reposter.utils.video_validator.create_subprocess_exec",
+            new=AsyncMock(side_effect=[probe_proc, decode_proc]),
+        ),
+    ):
+        result = await validate_video_file(video)
+    assert result.valid is False
+    assert "расходится" in result.reason
+    assert "усечён" not in result.reason

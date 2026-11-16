@@ -251,6 +251,10 @@ async def validate_video_file(path: Path, *, timeout_seconds: float | None = Non
     if container is not None and decoded is not None:
         tolerance = _duration_tolerance(container, decoded)
         if abs(container - decoded) > tolerance:
+            if decoded > container:
+                return _invalid(
+                    f"декодирование расходится с контейнером: декодировано {decoded:.1f}с из {container:.1f}с"
+                )
             return _invalid(f"поток усечён: декодировано {decoded:.1f}с из {container:.1f}с")
 
     return _ok()
