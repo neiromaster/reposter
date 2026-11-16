@@ -33,6 +33,7 @@ def settings():
     mock_settings.downloader.cookie_spec = CookieSpec(browser="firefox", profile="default-release-1")
     mock_settings.downloader.browser = "firefox"
     mock_settings.downloader.browser_restart_wait_seconds = 1
+    mock_settings.downloader.validate_downloads = False
     return mock_settings
 
 
@@ -638,3 +639,94 @@ class TestBuildYdlOpts:
         with patch("src.reposter.utils.browser._firefox_profiles_ini_paths", return_value=(tmp_path / "missing.ini",)):
             opts = ytdlp_manager._build_ydl_opts(config)
         assert opts["cookiesfrombrowser"] == ("firefox", "default-release-1", None, None)
+
+
+@pytest.mark.asyncio
+async def test_download_video_skips_validation_when_disabled(ytdlp_manager: YTDLPManager, settings: Settings):
+    """With validate_downloads=False the validator is never called (current behavior)."""
+    # Arrange
+    await ytdlp_manager.setup(settings)
+    mock_result = ("success", str(Path(tempfile.gettempdir()) / "test.mp4"))
+
+    with (
+        patch.object(ytdlp_manager, "_wait_for_result_or_shutdown", AsyncMock()) as mock_wait,
+        patch("src.reposter.managers.ytdlp_manager.validate_video_file", new=AsyncMock()) as mock_validate,
+    ):
+        mock_wait.return_value = mock_result
+
+        # Act
+        result = await ytdlp_manager.download_video("https://example.com/video")
+
+        # Assert
+        assert result == Path(mock_result[1])
+        mock_validate.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_download_video_retries_on_failed_validation(
+    ytdlp_manager: YTDLPManager, settings: Settings, tmp_path: Path
+):
+    """An invalid download is deleted (with sidecars) and re-downloaded."""
+    # Arrange
+    from src.reposter.utils.video_validator import ValidationResult
+
+    await ytdlp_manager.setup(settings)
+    settings.downloader.validate_downloads = True
+    broken = tmp_path / "broken.mp4"
+    broken.write_bytes(b"broken")
+    sidecar = tmp_path / "broken.mp4.part"
+    sidecar.write_bytes(b"partial")
+    result_pair = ("success", str(broken))
+    invalid = ValidationResult(valid=False, skipped=False, reason="поток усечён")
+    valid = ValidationResult(valid=True, skipped=False, reason="ok")
+
+    with (
+        patch.object(ytdlp_manager, "_wait_for_result_or_shutdown", AsyncMock()) as mock_wait,
+        patch(
+            "src.reposter.managers.ytdlp_manager.validate_video_file",
+            new=AsyncMock(side_effect=[invalid, valid]),
+        ) as mock_validate,
+    ):
+        mock_wait.side_effect = [result_pair, result_pair]
+
+        # Act
+        result = await ytdlp_manager.download_video("https://example.com/video")
+
+        # Assert
+        assert result == broken
+        assert mock_validate.call_count == 2
+        assert not broken.exists()
+        assert not sidecar.exists()
+
+
+@pytest.mark.asyncio
+async def test_download_video_none_when_validation_always_fails(
+    ytdlp_manager: YTDLPManager, settings: Settings, tmp_path: Path
+):
+    """All attempts invalid -> download_video returns None and artifacts are gone."""
+    # Arrange
+    from src.reposter.utils.video_validator import ValidationResult
+
+    await ytdlp_manager.setup(settings)
+    settings.downloader.validate_downloads = True
+    broken = tmp_path / "broken.mp4"
+    broken.write_bytes(b"broken")
+    invalid = ValidationResult(valid=False, skipped=False, reason="битое")
+
+    with (
+        patch.object(ytdlp_manager, "_wait_for_result_or_shutdown", AsyncMock()) as mock_wait,
+        patch(
+            "src.reposter.managers.ytdlp_manager.validate_video_file",
+            new=AsyncMock(return_value=invalid),
+        ),
+        patch.object(ytdlp_manager, "restart_browser", AsyncMock()),
+    ):
+        mock_wait.return_value = ("success", str(broken))
+
+        # Act
+        result = await ytdlp_manager.download_video("https://example.com/video")
+
+        # Assert
+        assert result is None
+        assert mock_wait.call_count == 2  # RetryConfig.count from the fixture
+        assert not broken.exists()

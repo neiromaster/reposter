@@ -24,6 +24,7 @@ from ..utils.browser import (
     resolve_firefox_profile,
 )
 from ..utils.log import log
+from ..utils.video_validator import validate_video_file
 
 BROWSER_EXECUTABLES = (
     {
@@ -63,6 +64,22 @@ def _warn_if_still_running(proc: psutil.Process) -> None:
         return
     if alive:
         log(f"⚠️ Процесс {proc.pid} не удалось закрыть — возможно, браузер запущен от администратора.", indent=4)
+
+
+def _delete_download_artifacts(path: Path) -> None:
+    """Deletes the downloaded file and stale yt-dlp/aria2c sidecars so a retry re-downloads cleanly.
+
+    Globs are anchored to the exact file name / id-prefix so other videos in the
+    output directory are never touched: `id.mp4*` covers `id.mp4.part`,
+    `id.mp4.ytdl`, `id.mp4.aria2`; `id.f*` covers pre-merge format partials
+    (`id.f137.mp4.part`).
+    """
+    candidates = [path, *path.parent.glob(f"{path.name}*"), *path.parent.glob(f"{path.stem}.f*")]
+    for target in candidates:
+        try:
+            target.unlink(missing_ok=True)
+        except OSError as e:
+            log(f"⚠️ Не удалось удалить артефакт загрузки {target}: {e}", indent=4)
 
 
 class YTDLPManager(BaseManager):
@@ -267,7 +284,21 @@ class YTDLPManager(BaseManager):
                 status, payload = result
                 if status == "success":
                     log(f"✅ Видео скачано: {payload}", indent=4)
-                    return Path(payload)
+                    if self._downloader_config.validate_downloads:
+                        validation = await validate_video_file(Path(payload))
+                        if not validation.valid:
+                            log(
+                                f"❌ Видео не прошло проверку целостности: {validation.reason}. "
+                                "Удаляю и пробую перекачать...",
+                                indent=4,
+                            )
+                            _delete_download_artifacts(Path(payload))
+                            # Fall through to the generic retry below.
+                        else:
+                            log("✅ Проверка целостности видео пройдена.", indent=4)
+                            return Path(payload)
+                    else:
+                        return Path(payload)
 
                 # Error handling
                 log(f"❌ Ошибка скачивания: {payload}", indent=4)
