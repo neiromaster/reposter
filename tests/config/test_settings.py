@@ -103,6 +103,16 @@ class TestSettingsValidation:
             # This should succeed and create the directory
             assert config.output_path.exists()
 
+    def test_downloader_config_validate_downloads_default_false(self):
+        """Validation is disabled by default (current behavior preserved)."""
+        config = DownloaderConfig()
+        assert config.validate_downloads is False
+
+    def test_downloader_config_validate_downloads_explicit(self):
+        """validate_downloads can be enabled explicitly."""
+        config = DownloaderConfig(validate_downloads=True)
+        assert config.validate_downloads is True
+
     def test_settings_valid_creation(self, monkeypatch: MonkeyPatch):
         """Test creating valid settings."""
         # Mock environment variables

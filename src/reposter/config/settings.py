@@ -82,6 +82,10 @@ class DownloaderConfig(BaseModel):
     yt_dlp_opts: dict[str, Any] = Field(default_factory=dict)
     retries: RetryConfig = Field(default_factory=RetryConfig)
     browser_restart_wait_seconds: int = Field(default=30, ge=0)
+    validate_downloads: bool = Field(
+        default=False,
+        description="Проверять скачанное видео полным декодированием через ffmpeg перед публикацией",
+    )
 
     @field_validator("cookies_from_browser")
     @classmethod
