@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import asyncio
+import json
 import shutil
 
 # Subprocess entry point; patched by tests and consumed by the decode pass.
-from asyncio import create_subprocess_exec  # type: ignore[reportUnusedImport]  # noqa: F401
+from asyncio import create_subprocess_exec
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, TypeGuard, cast
 
 from .log import log
 
@@ -51,6 +54,96 @@ def _fail_open(reason: str) -> ValidationResult:
     return ValidationResult(valid=True, skipped=True, reason=reason)
 
 
+async def _run_command(program: str, args: list[str]) -> tuple[int, bytes, bytes]:
+    """Runs a subprocess, returns (returncode, stdout, stderr). Kills the child when cancelled."""
+    proc = await create_subprocess_exec(
+        program,
+        *args,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    try:
+        stdout, stderr = await proc.communicate()
+    except BaseException:
+        proc.kill()
+        await proc.wait()
+        raise
+    returncode = proc.returncode if proc.returncode is not None else -1
+    return returncode, stdout, stderr
+
+
+async def _probe_media(path: Path) -> dict[str, Any] | None:
+    """Runs ffprobe and returns parsed JSON, or None when probing is unavailable."""
+    args = [
+        "-v",
+        "error",
+        "-show_entries",
+        "stream=codec_type,duration",
+        "-show_entries",
+        "format=duration",
+        "-of",
+        "json",
+        str(path),
+    ]
+    try:
+        async with asyncio.timeout(PROBE_TIMEOUT_SECONDS):
+            returncode, stdout, _stderr = await _run_command("ffprobe", args)
+    except (TimeoutError, OSError):
+        return None
+    if returncode != 0:
+        return None
+    try:
+        return cast(dict[str, Any], json.loads(stdout.decode("utf-8", errors="replace")))
+    except json.JSONDecodeError:
+        return None
+
+
+def _parse_duration(value: Any) -> float | None:
+    """Parses an ffprobe duration (string or number) into seconds."""
+    if isinstance(value, int | float):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value)
+        except ValueError:
+            return None
+    return None
+
+
+def _is_stream_entry(item: Any) -> TypeGuard[dict[str, Any]]:
+    """Narrows a probe stream item to a JSON object; guards against malformed probe output."""
+    return isinstance(item, dict)
+
+
+def _duration_tolerance(*durations: float | None) -> float:
+    """max(2s, 1% of the largest known duration)."""
+    known = [d for d in durations if d is not None]
+    reference = max(known) if known else 0.0
+    return max(DURATION_TOLERANCE_SECONDS, reference * DURATION_TOLERANCE_RATIO)
+
+
+def _stream_duration_mismatch(probe: dict[str, Any] | None) -> str | None:
+    """Returns an invalid-reason when video and audio stream durations diverge beyond tolerance."""
+    if not probe:
+        return None
+    streams = probe.get("streams")
+    if not isinstance(streams, list):
+        return None
+    durations = {
+        s.get("codec_type"): _parse_duration(s.get("duration"))
+        for s in cast(list[Any], streams)
+        if _is_stream_entry(s)
+    }
+    video = durations.get("video")
+    audio = durations.get("audio")
+    if video is None or audio is None:
+        return None
+    tolerance = _duration_tolerance(video, audio)
+    if abs(video - audio) > tolerance:
+        return f"длительности потоков расходятся: видео {video:.1f}с против аудио {audio:.1f}с"
+    return None
+
+
 async def validate_video_file(path: Path, *, timeout_seconds: float | None = None) -> ValidationResult:
     """Validates a downloaded video: stream sanity and full-decode completeness.
 
@@ -62,5 +155,10 @@ async def validate_video_file(path: Path, *, timeout_seconds: float | None = Non
     if shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None:
         log("⚠️ ffmpeg/ffprobe не найдены в PATH — проверка целостности видео пропущена.", indent=4)
         return _fail_open("ffmpeg/ffprobe не найдены — проверка пропущена")
+
+    probe = await _probe_media(path)
+    mismatch = _stream_duration_mismatch(probe)
+    if mismatch:
+        return _invalid(mismatch)
 
     return _ok()
