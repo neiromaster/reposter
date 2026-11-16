@@ -297,7 +297,7 @@ class YTDLPManager(BaseManager):
                             _delete_download_artifacts(downloaded)
                             # Fall through to the generic retry below.
                         elif validation.skipped:
-                            log("⏭️ Проверка целостности пропущена (ffmpeg/ffprobe недоступны).", indent=4)
+                            log(f"⏭️ Проверка целостности пропущена: {validation.reason}.", indent=4)
                             return downloaded
                         else:
                             log("✅ Проверка целостности видео пройдена.", indent=4)
@@ -343,9 +343,7 @@ class YTDLPManager(BaseManager):
         try:
             if shutdown_task is None:
                 return await validation_task
-            done, _pending = await asyncio.wait(
-                (validation_task, shutdown_task), return_when=asyncio.FIRST_COMPLETED
-            )
+            done, _pending = await asyncio.wait((validation_task, shutdown_task), return_when=asyncio.FIRST_COMPLETED)
             if validation_task in done:
                 return validation_task.result()
         finally:
