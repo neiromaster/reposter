@@ -111,7 +111,7 @@ downloader:
 
 The `browser` field is deprecated: when `cookies_from_browser` is not set it is used as before (without a profile). The Firefox profile accepts any form — the Firefox profile name (as in `-P`), the profile folder name, or a path; the app resolves it via `profiles.ini` itself. For Firefox only the given profile is restarted; for Chrome/Edge the whole browser is restarted.
 
-`validate_downloads` (default `false`) runs a full ffmpeg decode of every downloaded video, cross-checks video/audio stream durations and decoded-vs-container duration, and treats truncated or corrupt files as failed download attempts — they are deleted and re-downloaded; if all attempts fail, the post is skipped and retried in the next cycle. Requires `ffmpeg`/`ffprobe` in PATH (silently skipped when absent).
+`validate_downloads` (default `false`) runs a full ffmpeg decode of every downloaded video, cross-checks video/audio stream durations and decoded-vs-container duration, and treats truncated or corrupt files as failed download attempts — they are deleted and re-downloaded; if all attempts fail, the post is skipped and retried in the next cycle. Requires `ffmpeg`/`ffprobe` in PATH (skipped with a log warning when absent).
 
 ### Obtaining Tokens and Keys
 
