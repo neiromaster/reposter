@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import shutil
 
@@ -66,7 +67,8 @@ async def _run_command(program: str, args: list[str]) -> tuple[int, bytes, bytes
         stdout, stderr = await proc.communicate()
     except BaseException:
         proc.kill()
-        await proc.wait()
+        with contextlib.suppress(BaseException):
+            await proc.wait()
         raise
     returncode = proc.returncode if proc.returncode is not None else -1
     return returncode, stdout, stderr
@@ -144,6 +146,38 @@ def _stream_duration_mismatch(probe: dict[str, Any] | None) -> str | None:
     return None
 
 
+def _has_fatal_decode_error(stderr_text: str) -> str | None:
+    """Returns the first fatal decode pattern found in casefolded ffmpeg stderr."""
+    folded = stderr_text.casefold()
+    for pattern in FATAL_DECODE_PATTERNS:
+        if pattern in folded:
+            return pattern
+    return None
+
+
+async def _decode_check(path: Path, timeout_seconds: float) -> tuple[int, bytes, bytes]:
+    """Runs the full-decode ffmpeg pass; returns (returncode, stdout, stderr).
+
+    stdout carries `-progress pipe:1` telemetry, stderr carries `-v error` messages.
+    Kills the child on timeout via _run_command's cancellation path.
+    """
+    args = [
+        "-v",
+        "error",
+        "-nostdin",
+        "-nostats",
+        "-progress",
+        "pipe:1",
+        "-i",
+        str(path),
+        "-f",
+        "null",
+        "-",
+    ]
+    async with asyncio.timeout(timeout_seconds):
+        return await _run_command("ffmpeg", args)
+
+
 async def validate_video_file(path: Path, *, timeout_seconds: float | None = None) -> ValidationResult:
     """Validates a downloaded video: stream sanity and full-decode completeness.
 
@@ -160,5 +194,19 @@ async def validate_video_file(path: Path, *, timeout_seconds: float | None = Non
     mismatch = _stream_duration_mismatch(probe)
     if mismatch:
         return _invalid(mismatch)
+
+    timeout = float(timeout_seconds) if timeout_seconds is not None else float(MIN_TIMEOUT_SECONDS)
+    try:
+        returncode, _stdout, stderr = await _decode_check(path, timeout)
+    except TimeoutError:
+        return _invalid(f"декодирование превысило таймаут {timeout:.0f} сек")
+    except OSError:
+        return _fail_open("ffmpeg не удалось запустить")
+
+    fatal = _has_fatal_decode_error(stderr.decode("utf-8", errors="replace"))
+    if fatal:
+        return _invalid(f"ошибка декодирования: {fatal}")
+    if returncode != 0:
+        return _invalid(f"ffmpeg завершился с кодом {returncode}")
 
     return _ok()
