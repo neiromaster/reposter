@@ -24,7 +24,7 @@ from ..utils.browser import (
     resolve_firefox_profile,
 )
 from ..utils.log import log
-from ..utils.video_validator import validate_video_file
+from ..utils.video_validator import ValidationResult, validate_video_file
 
 BROWSER_EXECUTABLES = (
     {
@@ -263,6 +263,7 @@ class YTDLPManager(BaseManager):
 
         retries = self._downloader_config.retries.count
         base_delay = self._downloader_config.retries.delay_seconds
+        validate_downloads = self._downloader_config.validate_downloads
 
         for attempt in range(retries):
             self._check_shutdown()
@@ -283,22 +284,26 @@ class YTDLPManager(BaseManager):
             if result:
                 status, payload = result
                 if status == "success":
+                    downloaded = Path(payload)
                     log(f"✅ Видео скачано: {payload}", indent=4)
-                    if self._downloader_config.validate_downloads:
-                        validation = await validate_video_file(Path(payload))
+                    if validate_downloads:
+                        validation = await self._validate_or_shutdown(downloaded)
                         if not validation.valid:
+                            retry_note = "Удаляю и пробую перекачать..." if attempt < retries - 1 else "Удаляю файл."
                             log(
-                                f"❌ Видео не прошло проверку целостности: {validation.reason}. "
-                                "Удаляю и пробую перекачать...",
+                                f"❌ Видео не прошло проверку целостности: {validation.reason}. {retry_note}",
                                 indent=4,
                             )
-                            _delete_download_artifacts(Path(payload))
+                            _delete_download_artifacts(downloaded)
                             # Fall through to the generic retry below.
+                        elif validation.skipped:
+                            log("⏭️ Проверка целостности пропущена (ffmpeg/ffprobe недоступны).", indent=4)
+                            return downloaded
                         else:
                             log("✅ Проверка целостности видео пройдена.", indent=4)
-                            return Path(payload)
+                            return downloaded
                     else:
-                        return Path(payload)
+                        return downloaded
 
                 # Error handling
                 log(f"❌ Ошибка скачивания: {payload}", indent=4)
@@ -321,6 +326,37 @@ class YTDLPManager(BaseManager):
 
         log(f"❌ Не удалось скачать видео после {retries} попыток.", indent=4)
         return None
+
+    async def _validate_or_shutdown(self, path: Path) -> ValidationResult:
+        """Races the video validation against the shutdown event.
+
+        On shutdown the validation task is cancelled (its cancellation path kills
+        ffmpeg and reaps the child) and CancelledError propagates, mirroring
+        _wait_for_result_or_shutdown's shutdown semantics. Downloaded artifacts
+        are left in place: a file abandoned mid-validation self-heals on the
+        next run.
+        """
+        validation_task: asyncio.Task[ValidationResult] = asyncio.create_task(validate_video_file(path))
+        shutdown_task: asyncio.Task[bool] | None = None
+        if self._shutdown_event is not None:
+            shutdown_task = asyncio.create_task(self._shutdown_event.wait())
+        try:
+            if shutdown_task is None:
+                return await validation_task
+            done, _pending = await asyncio.wait(
+                (validation_task, shutdown_task), return_when=asyncio.FIRST_COMPLETED
+            )
+            if validation_task in done:
+                return validation_task.result()
+        finally:
+            losers: list[asyncio.Task[Any]] = [
+                task for task in (validation_task, shutdown_task) if task is not None and not task.done()
+            ]
+            for task in losers:
+                task.cancel()
+            # Reap the losing tasks so the validator's kill/reap path completes before we exit.
+            await asyncio.gather(*losers, return_exceptions=True)
+        raise asyncio.CancelledError()
 
     async def _wait_for_result_or_shutdown(self, proc: Process, out_q: Queue[Result]) -> Result | None:
         while proc.is_alive():

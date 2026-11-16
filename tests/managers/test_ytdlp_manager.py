@@ -676,6 +676,8 @@ async def test_download_video_retries_on_failed_validation(
     broken.write_bytes(b"broken")
     sidecar = tmp_path / "broken.mp4.part"
     sidecar.write_bytes(b"partial")
+    neighbor = tmp_path / "broken_other.mp4"
+    neighbor.write_bytes(b"unrelated")
     result_pair = ("success", str(broken))
     invalid = ValidationResult(valid=False, skipped=False, reason="поток усечён")
     valid = ValidationResult(valid=True, skipped=False, reason="ok")
@@ -697,6 +699,7 @@ async def test_download_video_retries_on_failed_validation(
         assert mock_validate.call_count == 2
         assert not broken.exists()
         assert not sidecar.exists()
+        assert neighbor.exists()  # glob is anchored to the exact file name: neighbors untouched
 
 
 @pytest.mark.asyncio
@@ -719,7 +722,6 @@ async def test_download_video_none_when_validation_always_fails(
             "src.reposter.managers.ytdlp_manager.validate_video_file",
             new=AsyncMock(return_value=invalid),
         ),
-        patch.object(ytdlp_manager, "restart_browser", AsyncMock()),
     ):
         mock_wait.return_value = ("success", str(broken))
 
@@ -730,3 +732,74 @@ async def test_download_video_none_when_validation_always_fails(
         assert result is None
         assert mock_wait.call_count == 2  # RetryConfig.count from the fixture
         assert not broken.exists()
+
+
+@pytest.mark.asyncio
+async def test_download_video_validation_respects_shutdown(
+    ytdlp_manager: YTDLPManager, settings: Settings, tmp_path: Path
+):
+    """Shutdown during validation cancels the validator and propagates CancelledError."""
+    from src.reposter.utils.video_validator import ValidationResult
+
+    await ytdlp_manager.setup(settings)
+    settings.downloader.validate_downloads = True
+    video = tmp_path / "video.mp4"
+    video.write_bytes(b"x")
+    shutdown_event = asyncio.Event()
+    ytdlp_manager.set_shutdown_event(shutdown_event)
+
+    async def _hang_and_trigger_shutdown(path: Path) -> ValidationResult:
+        assert path == video
+        shutdown_event.set()  # shutdown arrives while validation is mid-flight
+        await asyncio.sleep(3600)  # only cancellation ends this
+        raise AssertionError("validation was not cancelled by shutdown")
+
+    with (
+        patch.object(
+            ytdlp_manager,
+            "_wait_for_result_or_shutdown",
+            AsyncMock(return_value=("success", str(video))),
+        ),
+        patch(
+            "src.reposter.managers.ytdlp_manager.validate_video_file",
+            new=AsyncMock(side_effect=_hang_and_trigger_shutdown),
+        ) as mock_validate,
+        pytest.raises(asyncio.CancelledError),
+    ):
+        await asyncio.wait_for(
+            ytdlp_manager.download_video("https://example.com/video"),
+            timeout=10,
+        )
+
+    assert mock_validate.await_count == 1  # validation was the active await when shutdown hit
+    assert video.exists()  # the shutdown path must not delete artifacts
+
+
+@pytest.mark.asyncio
+async def test_download_video_fail_open_when_binaries_missing(
+    ytdlp_manager: YTDLPManager, settings: Settings, tmp_path: Path
+):
+    """Validator skip (no ffmpeg) -> file returned, NOT deleted."""
+    from src.reposter.utils.video_validator import ValidationResult
+
+    await ytdlp_manager.setup(settings)
+    settings.downloader.validate_downloads = True
+    video = tmp_path / "video.mp4"
+    video.write_bytes(b"x")
+    skipped = ValidationResult(valid=True, skipped=True, reason="ffmpeg/ffprobe не найдены — проверка пропущена")
+
+    with (
+        patch.object(
+            ytdlp_manager,
+            "_wait_for_result_or_shutdown",
+            AsyncMock(return_value=("success", str(video))),
+        ),
+        patch(
+            "src.reposter.managers.ytdlp_manager.validate_video_file",
+            new=AsyncMock(return_value=skipped),
+        ),
+    ):
+        result = await ytdlp_manager.download_video("https://example.com/video")
+
+    assert result == video
+    assert video.exists()
