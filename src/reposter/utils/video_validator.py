@@ -135,9 +135,7 @@ def _stream_duration_mismatch(probe: dict[str, Any] | None) -> str | None:
     if not isinstance(streams, list):
         return None
     durations = {
-        s.get("codec_type"): _parse_duration(s.get("duration"))
-        for s in cast(list[Any], streams)
-        if _is_stream_entry(s)
+        s.get("codec_type"): _parse_duration(s.get("duration")) for s in cast(list[Any], streams) if _is_stream_entry(s)
     }
     video = durations.get("video")
     audio = durations.get("audio")
