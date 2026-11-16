@@ -256,3 +256,90 @@ async def test_run_command_kills_child_on_timeout():
             await _run_command("ffmpeg", ["-version"])
     slow_proc.kill.assert_called_once()
     slow_proc.wait.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_truncated_stream_detected_by_progress(tmp_path: Path):
+    """Silent truncation: rc=0, empty stderr, but decoded 12.7s of a 20.0s container."""
+    video = tmp_path / "video.mp4"
+    video.write_bytes(b"x")
+    probe_proc = _make_proc(returncode=0, stdout=_probe_json("20.0", "20.0", "20.0"))
+    decode_proc = _make_proc(
+        returncode=0,
+        stdout=b"progress=continue\nout_time_us=12701000\nprogress=end\n",
+        stderr=b"",
+    )
+    with (
+        patch("src.reposter.utils.video_validator.shutil.which", return_value="/usr/bin/ffmpeg"),
+        patch(
+            "src.reposter.utils.video_validator.create_subprocess_exec",
+            new=AsyncMock(side_effect=[probe_proc, decode_proc]),
+        ),
+    ):
+        result = await validate_video_file(video)
+    assert result.valid is False
+    assert "усечён" in result.reason
+
+
+@pytest.mark.asyncio
+async def test_missing_progress_end_invalid(tmp_path: Path):
+    """A decode pass that never reports progress=end is invalid."""
+    video = tmp_path / "video.mp4"
+    video.write_bytes(b"x")
+    probe_proc = _make_proc(returncode=0, stdout=_probe_json("20.0", "20.0", "20.0"))
+    decode_proc = _make_proc(returncode=0, stdout=b"progress=continue\nout_time_us=20000000\n", stderr=b"")
+    with (
+        patch("src.reposter.utils.video_validator.shutil.which", return_value="/usr/bin/ffmpeg"),
+        patch(
+            "src.reposter.utils.video_validator.create_subprocess_exec",
+            new=AsyncMock(side_effect=[probe_proc, decode_proc]),
+        ),
+    ):
+        result = await validate_video_file(video)
+    assert result.valid is False
+    assert "progress=end" in result.reason
+
+
+@pytest.mark.asyncio
+async def test_timeout_kills_process_and_invalid(tmp_path: Path):
+    """Decode timeout: process is killed (no leak) and the file is invalid."""
+    video = tmp_path / "video.mp4"
+    video.write_bytes(b"x")
+    probe_proc = _make_proc(returncode=0, stdout=_probe_json("20.0", "20.0", "20.0"))
+    hang_proc = _make_proc(returncode=0)
+    hang_proc.communicate = AsyncMock(side_effect=_communicate_hang)
+    with (
+        patch("src.reposter.utils.video_validator.shutil.which", return_value="/usr/bin/ffmpeg"),
+        patch(
+            "src.reposter.utils.video_validator.create_subprocess_exec",
+            new=AsyncMock(side_effect=[probe_proc, hang_proc]),
+        ),
+    ):
+        result = await validate_video_file(video, timeout_seconds=0.05)
+    assert result.valid is False
+    assert "таймаут" in result.reason
+    hang_proc.kill.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_fatal_pattern_wins_over_returncode(tmp_path: Path):
+    """When both a fatal pattern and a nonzero rc are present, the pattern is reported."""
+    video = tmp_path / "video.mp4"
+    video.write_bytes(b"x")
+    probe_proc = _make_proc(returncode=0, stdout=_probe_json("20.0", "20.0", "20.0"))
+    decode_proc = _make_proc(
+        returncode=1,
+        stdout=DECODE_OK_STDOUT,
+        stderr=b"Error splitting the input into NAL units.\n",
+    )
+    with (
+        patch("src.reposter.utils.video_validator.shutil.which", return_value="/usr/bin/ffmpeg"),
+        patch(
+            "src.reposter.utils.video_validator.create_subprocess_exec",
+            new=AsyncMock(side_effect=[probe_proc, decode_proc]),
+        ),
+    ):
+        result = await validate_video_file(video)
+    assert result.valid is False
+    assert "nal units" in result.reason
+    assert "завершился" not in result.reason

@@ -66,7 +66,10 @@ async def _run_command(program: str, args: list[str]) -> tuple[int, bytes, bytes
     try:
         stdout, stderr = await proc.communicate()
     except BaseException:
-        proc.kill()
+        # kill() itself can raise (Windows PermissionError on an exited-but-undrained child,
+        # POSIX ProcessLookupError after an external reap); that must not mask the CancelledError.
+        with contextlib.suppress(OSError):
+            proc.kill()
         with contextlib.suppress(BaseException):
             await proc.wait()
         raise
@@ -155,6 +158,34 @@ def _has_fatal_decode_error(stderr_text: str) -> str | None:
     return None
 
 
+def _parse_decoded_seconds(progress_text: str) -> float | None:
+    """Extracts the last out_time (seconds) from ffmpeg -progress output.
+
+    ffmpeg reports both `out_time_us` and `out_time_ms`; despite the `ms` name
+    both carry microseconds.
+    """
+    seconds: float | None = None
+    for line in progress_text.splitlines():
+        key, _, raw = line.partition("=")
+        if key not in ("out_time_us", "out_time_ms"):
+            continue
+        try:
+            seconds = float(raw.strip()) / 1_000_000
+        except ValueError:
+            continue
+    return seconds
+
+
+def _container_duration(probe: dict[str, Any] | None) -> float | None:
+    """Container duration in seconds from ffprobe output."""
+    if not probe:
+        return None
+    fmt = probe.get("format")
+    if not isinstance(fmt, dict):
+        return None
+    return _parse_duration(cast(dict[str, Any], fmt).get("duration"))
+
+
 async def _decode_check(path: Path, timeout_seconds: float) -> tuple[int, bytes, bytes]:
     """Runs the full-decode ffmpeg pass; returns (returncode, stdout, stderr).
 
@@ -195,9 +226,13 @@ async def validate_video_file(path: Path, *, timeout_seconds: float | None = Non
     if mismatch:
         return _invalid(mismatch)
 
-    timeout = float(timeout_seconds) if timeout_seconds is not None else float(MIN_TIMEOUT_SECONDS)
+    container = _container_duration(probe)
+    if timeout_seconds is not None:
+        timeout = float(timeout_seconds)
+    else:
+        timeout = max(float(MIN_TIMEOUT_SECONDS), container * TIMEOUT_PER_MEDIA_SECOND if container else 0.0)
     try:
-        returncode, _stdout, stderr = await _decode_check(path, timeout)
+        returncode, stdout, stderr = await _decode_check(path, timeout)
     except TimeoutError:
         return _invalid(f"декодирование превысило таймаут {timeout:.0f} сек")
     except OSError:
@@ -208,5 +243,14 @@ async def validate_video_file(path: Path, *, timeout_seconds: float | None = Non
         return _invalid(f"ошибка декодирования: {fatal}")
     if returncode != 0:
         return _invalid(f"ffmpeg завершился с кодом {returncode}")
+
+    progress_text = stdout.decode("utf-8", errors="replace")
+    if "progress=end" not in progress_text:
+        return _invalid("декодирование не завершилось (нет progress=end)")
+    decoded = _parse_decoded_seconds(progress_text)
+    if container is not None and decoded is not None:
+        tolerance = _duration_tolerance(container, decoded)
+        if abs(container - decoded) > tolerance:
+            return _invalid(f"поток усечён: декодировано {decoded:.1f}с из {container:.1f}с")
 
     return _ok()
