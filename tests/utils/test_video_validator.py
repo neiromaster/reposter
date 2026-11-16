@@ -1,4 +1,3 @@
-# type: ignore[reportPrivateUsage]
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -7,7 +6,7 @@ import pytest
 from src.reposter.utils.video_validator import validate_video_file
 
 
-def _make_proc(returncode: int = 0, stdout: bytes = b"", stderr: bytes = b"") -> MagicMock:
+def _make_proc(returncode: int = 0, stdout: bytes = b"", stderr: bytes = b"") -> MagicMock:  # type: ignore[reportUnusedFunction]
     """Builds a fake asyncio subprocess with a completed communicate()."""
     proc = MagicMock()
     proc.communicate = AsyncMock(return_value=(stdout, stderr))
