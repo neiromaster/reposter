@@ -6,9 +6,10 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from src.reposter.config.settings import DownloaderConfig, RetryConfig, Settings
+from src.reposter.config.settings import CookiesViaSshConfig, DownloaderConfig, RetryConfig, Settings
 from src.reposter.managers.ytdlp_manager import BROWSER_EXECUTABLES, YTDLPManager
 from src.reposter.utils.browser import CookieSpec, ResolvedFirefoxProfile
+from src.reposter.utils.ssh_cookies import CookieFetchError
 
 
 @pytest.fixture
@@ -34,6 +35,9 @@ def settings():
     mock_settings.downloader.browser = "firefox"
     mock_settings.downloader.browser_restart_wait_seconds = 1
     mock_settings.downloader.validate_downloads = False
+    # Pin disabled: Mock(spec=DownloaderConfig) would return a truthy auto-attribute
+    # and send every download test into the SSH branch (including real fetch attempts).
+    mock_settings.downloader.cookies_via_ssh = CookiesViaSshConfig()
     return mock_settings
 
 
@@ -803,3 +807,88 @@ async def test_download_video_fail_open_when_binaries_missing(
 
     assert result == video
     assert video.exists()
+
+
+@pytest.mark.asyncio
+async def test_build_ydl_opts_uses_cookiefile_when_ssh_cache_exists(
+    ytdlp_manager: YTDLPManager, settings: Settings, tmp_path: Path
+):
+    settings.downloader.cookies_via_ssh = CookiesViaSshConfig(enabled=True, host="h", user="u", profile="p")
+    await ytdlp_manager.setup(settings)
+    cache = tmp_path / "cookies.txt"
+    cache.write_text("stub", encoding="utf-8")
+    with patch("src.reposter.managers.ytdlp_manager.cookies_cache_path", return_value=cache):
+        opts = ytdlp_manager._build_ydl_opts(settings.downloader)
+    assert opts["cookiefile"] == str(cache)
+    assert "cookiesfrombrowser" not in opts
+
+
+@pytest.mark.asyncio
+async def test_build_ydl_opts_ssh_cache_missing_has_no_cookie_source(
+    ytdlp_manager: YTDLPManager, settings: Settings, tmp_path: Path
+):
+    settings.downloader.cookies_via_ssh = CookiesViaSshConfig(enabled=True, host="h", user="u", profile="p")
+    await ytdlp_manager.setup(settings)
+    with patch("src.reposter.managers.ytdlp_manager.cookies_cache_path", return_value=tmp_path / "absent.txt"):
+        opts = ytdlp_manager._build_ydl_opts(settings.downloader)
+    assert "cookiefile" not in opts
+    assert "cookiesfrombrowser" not in opts
+
+
+@pytest.mark.asyncio
+async def test_build_ydl_opts_local_mode_keeps_cookiesfrombrowser(ytdlp_manager: YTDLPManager, settings: Settings):
+    await ytdlp_manager.setup(settings)
+    opts = ytdlp_manager._build_ydl_opts(settings.downloader)
+    assert opts["cookiesfrombrowser"][0] == "firefox"
+    assert "cookiefile" not in opts
+
+
+@pytest.mark.asyncio
+async def test_download_video_fetches_ssh_cookies_when_cache_missing(
+    ytdlp_manager: YTDLPManager, settings: Settings, tmp_path: Path
+):
+    settings.downloader.cookies_via_ssh = CookiesViaSshConfig(enabled=True, host="h", user="u", profile="p")
+    settings.downloader.retries = RetryConfig(count=1, delay_seconds=0)
+    await ytdlp_manager.setup(settings)
+    out_file = Path(tempfile.gettempdir()) / "ssh_fetch_test.mp4"
+    with (
+        patch("src.reposter.managers.ytdlp_manager.cookies_cache_path", return_value=tmp_path / "absent.txt"),
+        patch("src.reposter.managers.ytdlp_manager.fetch_cookies_via_ssh", new_callable=AsyncMock) as mock_fetch,
+        patch("src.reposter.managers.ytdlp_manager.Process"),
+        patch.object(
+            ytdlp_manager,
+            "_wait_for_result_or_shutdown",
+            new_callable=AsyncMock,
+            return_value=("success", str(out_file)),
+        ),
+    ):
+        result = await ytdlp_manager.download_video("https://vk.com/video1.mp4")
+    assert result == out_file
+    mock_fetch.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_download_video_continues_when_ssh_fetch_fails(
+    ytdlp_manager: YTDLPManager, settings: Settings, tmp_path: Path
+):
+    settings.downloader.cookies_via_ssh = CookiesViaSshConfig(enabled=True, host="h", user="u", profile="p")
+    settings.downloader.retries = RetryConfig(count=1, delay_seconds=0)
+    await ytdlp_manager.setup(settings)
+    out_file = Path(tempfile.gettempdir()) / "ssh_fetch_fail_test.mp4"
+    with (
+        patch("src.reposter.managers.ytdlp_manager.cookies_cache_path", return_value=tmp_path / "absent.txt"),
+        patch(
+            "src.reposter.managers.ytdlp_manager.fetch_cookies_via_ssh",
+            new_callable=AsyncMock,
+            side_effect=CookieFetchError("нет соединения"),
+        ),
+        patch("src.reposter.managers.ytdlp_manager.Process"),
+        patch.object(
+            ytdlp_manager,
+            "_wait_for_result_or_shutdown",
+            new_callable=AsyncMock,
+            return_value=("success", str(out_file)),
+        ),
+    ):
+        result = await ytdlp_manager.download_video("https://vk.com/video1.mp4")
+    assert result == out_file

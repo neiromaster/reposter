@@ -24,6 +24,7 @@ from ..utils.browser import (
     resolve_firefox_profile,
 )
 from ..utils.log import log
+from ..utils.ssh_cookies import cookies_cache_path, fetch_cookies_via_ssh
 from ..utils.video_validator import ValidationResult, validate_video_file
 
 BROWSER_EXECUTABLES = (
@@ -121,16 +122,49 @@ class YTDLPManager(BaseManager):
         log("🎥 [YTDLP] Остановлен.", indent=1)
 
     def _build_ydl_opts(self, config: DownloaderConfig) -> dict[str, Any]:
-        """Builds yt-dlp options, resolving the cookie source into a cookiesfrombrowser tuple."""
-        browser, profile, keyring, container = resolve_cookie_profile(config.cookie_spec)
-        return {
+        """Builds yt-dlp options, resolving the cookie source (SSH cache file or local browser)."""
+        opts: dict[str, Any] = {
             **config.yt_dlp_opts,
             "outtmpl": str(config.output_path / "%(id)s.%(ext)s"),
-            "cookiesfrombrowser": (browser, profile, keyring, container),
             "quiet": True,
             "no_warnings": True,
             "verbose": False,
         }
+        if config.cookies_via_ssh.enabled:
+            cache = cookies_cache_path()
+            if cache.is_file():
+                opts["cookiefile"] = str(cache)
+            # No cache file — no cookie options; the fetch was already attempted in download_video.
+        else:
+            browser, profile, keyring, container = resolve_cookie_profile(config.cookie_spec)
+            opts["cookiesfrombrowser"] = (browser, profile, keyring, container)
+        return opts
+
+    def _ssh_cookies_enabled(self) -> bool:
+        """True when cookies come over SSH instead of the local browser."""
+        config = self._downloader_config
+        return config is not None and config.cookies_via_ssh.enabled
+
+    async def _ensure_ssh_cookies(self) -> None:
+        """Lazily fetches cookies over SSH when the cache file is missing.
+
+        Failure is logged and swallowed: public posts download without cookies,
+        private ones fail their retries and stay pending for the next cycle —
+        the same no-skip semantics as any other download failure.
+        """
+        config = self._downloader_config
+        if config is None:
+            return
+        cache = cookies_cache_path()
+        if cache.is_file():
+            return
+        log(f"🔑 Куки не найдены — забираю с {config.cookies_via_ssh.host} по SSH...", indent=4)
+        try:
+            await fetch_cookies_via_ssh(config.cookies_via_ssh, cache)
+        except Exception as e:
+            log(f"❌ Не удалось получить куки по SSH: {e}. Продолжаю без куков.", indent=4)
+        else:
+            log("✅ Куки получены по SSH.", indent=4)
 
     async def __aenter__(self) -> YTDLPManager:
         """Enter the async context manager."""
@@ -258,6 +292,9 @@ class YTDLPManager(BaseManager):
 
         out_dir = self._downloader_config.output_path
         out_dir.mkdir(parents=True, exist_ok=True)
+
+        if self._ssh_cookies_enabled():
+            await self._ensure_ssh_cookies()
 
         ydl_opts = self._build_ydl_opts(self._downloader_config)
 
