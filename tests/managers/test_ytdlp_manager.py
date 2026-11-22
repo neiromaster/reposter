@@ -2,7 +2,8 @@
 import asyncio
 import tempfile
 from pathlib import Path
-from unittest.mock import AsyncMock, Mock, patch
+from typing import Any
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 
@@ -39,6 +40,14 @@ def settings():
     # and send every download test into the SSH branch (including real fetch attempts).
     mock_settings.downloader.cookies_via_ssh = CookiesViaSshConfig()
     return mock_settings
+
+
+def _patch_process() -> Any:
+    """Patches Process with a dead-on-arrival mock: no real yt-dlp worker spawns,
+    and teardown's _terminate_active sees is_alive() False and skips the kill loop."""
+    proc = MagicMock()
+    proc.is_alive.return_value = False
+    return patch("src.reposter.managers.ytdlp_manager.Process", return_value=proc)
 
 
 @pytest.mark.asyncio
@@ -363,7 +372,10 @@ async def test_download_video_success_first_attempt(ytdlp_manager: YTDLPManager,
     video_url = "https://example.com/video"
     mock_result = ("success", str(Path(tempfile.gettempdir()) / "test.mp4"))
 
-    with patch.object(ytdlp_manager, "_wait_for_result_or_shutdown", AsyncMock()) as mock_wait:
+    with (
+        _patch_process(),
+        patch.object(ytdlp_manager, "_wait_for_result_or_shutdown", AsyncMock()) as mock_wait,
+    ):
         mock_wait.return_value = mock_result
 
         # Act
@@ -384,6 +396,7 @@ async def test_download_video_success_after_retry(ytdlp_manager: YTDLPManager, s
     success_result = ("success", str(Path(tempfile.gettempdir()) / "test.mp4"))
 
     with (
+        _patch_process(),
         patch.object(ytdlp_manager, "_wait_for_result_or_shutdown", AsyncMock()) as mock_wait,
         patch.object(ytdlp_manager, "restart_browser", AsyncMock()) as mock_restart,
     ):
@@ -411,6 +424,7 @@ async def test_download_video_all_retries_fail(ytdlp_manager: YTDLPManager, sett
     error_result = ("error", "some error")
 
     with (
+        _patch_process(),
         patch.object(ytdlp_manager, "_wait_for_result_or_shutdown", AsyncMock()) as mock_wait,
         patch.object(ytdlp_manager, "restart_browser", AsyncMock()) as mock_restart,
     ):
@@ -436,6 +450,7 @@ async def test_download_video_private_video_triggers_restart(ytdlp_manager: YTDL
     success_result = ("success", str(Path(tempfile.gettempdir()) / "test.mp4"))
 
     with (
+        _patch_process(),
         patch.object(ytdlp_manager, "_wait_for_result_or_shutdown", AsyncMock()) as mock_wait,
         patch.object(ytdlp_manager, "restart_browser", AsyncMock()) as mock_restart,
     ):
@@ -459,6 +474,7 @@ async def test_download_video_cancelled_error_handling(ytdlp_manager: YTDLPManag
     video_url = "https://example.com/video"
 
     with (
+        _patch_process(),
         patch.object(ytdlp_manager, "_wait_for_result_or_shutdown", AsyncMock()) as mock_wait,
         patch.object(ytdlp_manager, "_terminate_active", AsyncMock()) as mock_terminate,
     ):
@@ -653,6 +669,7 @@ async def test_download_video_skips_validation_when_disabled(ytdlp_manager: YTDL
     mock_result = ("success", str(Path(tempfile.gettempdir()) / "test.mp4"))
 
     with (
+        _patch_process(),
         patch.object(ytdlp_manager, "_wait_for_result_or_shutdown", AsyncMock()) as mock_wait,
         patch("src.reposter.managers.ytdlp_manager.validate_video_file", new=AsyncMock()) as mock_validate,
     ):
@@ -687,6 +704,7 @@ async def test_download_video_retries_on_failed_validation(
     valid = ValidationResult(valid=True, skipped=False, reason="ok")
 
     with (
+        _patch_process(),
         patch.object(ytdlp_manager, "_wait_for_result_or_shutdown", AsyncMock()) as mock_wait,
         patch(
             "src.reposter.managers.ytdlp_manager.validate_video_file",
@@ -721,6 +739,7 @@ async def test_download_video_none_when_validation_always_fails(
     invalid = ValidationResult(valid=False, skipped=False, reason="битое")
 
     with (
+        _patch_process(),
         patch.object(ytdlp_manager, "_wait_for_result_or_shutdown", AsyncMock()) as mock_wait,
         patch(
             "src.reposter.managers.ytdlp_manager.validate_video_file",
@@ -759,6 +778,7 @@ async def test_download_video_validation_respects_shutdown(
         raise AssertionError("validation was not cancelled by shutdown")
 
     with (
+        _patch_process(),
         patch.object(
             ytdlp_manager,
             "_wait_for_result_or_shutdown",
@@ -793,6 +813,7 @@ async def test_download_video_fail_open_when_binaries_missing(
     skipped = ValidationResult(valid=True, skipped=True, reason="ffmpeg/ffprobe не найдены — проверка пропущена")
 
     with (
+        _patch_process(),
         patch.object(
             ytdlp_manager,
             "_wait_for_result_or_shutdown",
@@ -854,7 +875,7 @@ async def test_download_video_fetches_ssh_cookies_when_cache_missing(
     with (
         patch("src.reposter.managers.ytdlp_manager.cookies_cache_path", return_value=tmp_path / "absent.txt"),
         patch("src.reposter.managers.ytdlp_manager.fetch_cookies_via_ssh", new_callable=AsyncMock) as mock_fetch,
-        patch("src.reposter.managers.ytdlp_manager.Process"),
+        _patch_process(),
         patch.object(
             ytdlp_manager,
             "_wait_for_result_or_shutdown",
@@ -882,7 +903,7 @@ async def test_download_video_continues_when_ssh_fetch_fails(
             new_callable=AsyncMock,
             side_effect=CookieFetchError("нет соединения"),
         ),
-        patch("src.reposter.managers.ytdlp_manager.Process"),
+        _patch_process(),
         patch.object(
             ytdlp_manager,
             "_wait_for_result_or_shutdown",
@@ -905,7 +926,7 @@ async def test_download_video_fetches_ssh_cookies_once_per_download_not_per_retr
     with (
         patch("src.reposter.managers.ytdlp_manager.cookies_cache_path", return_value=tmp_path / "absent.txt"),
         patch("src.reposter.managers.ytdlp_manager.fetch_cookies_via_ssh", new_callable=AsyncMock) as mock_fetch,
-        patch("src.reposter.managers.ytdlp_manager.Process"),
+        _patch_process(),
         patch.object(
             ytdlp_manager,
             "_wait_for_result_or_shutdown",
@@ -931,7 +952,7 @@ async def test_download_video_skips_ssh_fetch_when_cache_exists(
     with (
         patch("src.reposter.managers.ytdlp_manager.cookies_cache_path", return_value=cache),
         patch("src.reposter.managers.ytdlp_manager.fetch_cookies_via_ssh", new_callable=AsyncMock) as mock_fetch,
-        patch("src.reposter.managers.ytdlp_manager.Process"),
+        _patch_process(),
         patch.object(
             ytdlp_manager,
             "_wait_for_result_or_shutdown",
@@ -955,7 +976,7 @@ async def test_private_video_triggers_ssh_refresh_instead_of_restart(
     cache.write_text("stub", encoding="utf-8")
     with (
         patch("src.reposter.managers.ytdlp_manager.cookies_cache_path", return_value=cache),
-        patch("src.reposter.managers.ytdlp_manager.Process"),
+        _patch_process(),
         patch.object(
             ytdlp_manager,
             "_wait_for_result_or_shutdown",
@@ -987,7 +1008,7 @@ async def test_ssh_refresh_failure_is_logged_and_loop_continues(
             new_callable=AsyncMock,
             side_effect=CookieFetchError("ssh down"),
         ),
-        patch("src.reposter.managers.ytdlp_manager.Process"),
+        _patch_process(),
         patch.object(
             ytdlp_manager,
             "_wait_for_result_or_shutdown",
@@ -1006,7 +1027,7 @@ async def test_local_mode_private_video_still_restarts_browser(ytdlp_manager: YT
     settings.downloader.retries = RetryConfig(count=2, delay_seconds=0)
     await ytdlp_manager.setup(settings)
     with (
-        patch("src.reposter.managers.ytdlp_manager.Process"),
+        _patch_process(),
         patch.object(
             ytdlp_manager,
             "_wait_for_result_or_shutdown",
