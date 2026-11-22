@@ -163,6 +163,10 @@ def _write_netscape_file(cache_path: Path, rows: list[CookieRow]) -> None:
     cache_path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = cache_path.with_name(cache_path.name + ".tmp")
     tmp_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    # The cache holds a live VK session: restrict it to the owner before it lands
+    # on the final (possibly world-readable, e.g. /tmp) location. os.replace
+    # keeps the source file's mode, so there is never an exposed final file.
+    os.chmod(tmp_path, 0o600)
     os.replace(tmp_path, cache_path)
 
 

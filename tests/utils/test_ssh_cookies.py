@@ -369,9 +369,24 @@ async def test_refresh_opens_tab_then_fetches(tmp_path: Path):
     assert first_command[-1] == 'cmd /c start "" "firefox.exe" -headless -P "default-release" https://vk.com'
 
 
+def test_write_netscape_file_restricts_permissions(tmp_path: Path):
+    """The cache holds a live session: it must land 0o600 (chmod before replace)."""
+    cache = tmp_path / "cookies.txt"
+    with patch("src.reposter.utils.ssh_cookies.os.chmod") as mock_chmod:
+        _write_netscape_file(cache, [])
+    mock_chmod.assert_called_once_with(cache.with_name(cache.name + ".tmp"), 0o600)
+
+
 @pytest.mark.asyncio
 async def test_refresh_tab_failure_propagates(tmp_path: Path):
+    """The tab-open ssh command itself fails -> CookieFetchError, fetch never starts."""
     cache = tmp_path / "cookies.txt"
-    fake, _captured = _fake_run({})  # no files: the tab-open ssh call succeeds, the ini scp fails
+
+    async def fake(args: list[str]) -> str:
+        if args[0] == "ssh":
+            raise CookieFetchError("ssh: connect to host 192.0.2.10 port 22: timed out")
+        raise AssertionError("the fetch must not start after the tab-open failure")
+
     with patch("src.reposter.utils.ssh_cookies._run_command", side_effect=fake), pytest.raises(CookieFetchError):
         await refresh_cookies_via_ssh(_ssh_cfg(), cache, wait_seconds=0)
+    assert not cache.exists()
