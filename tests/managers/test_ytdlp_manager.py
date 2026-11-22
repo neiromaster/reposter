@@ -923,6 +923,10 @@ async def test_download_video_fetches_ssh_cookies_once_per_download_not_per_retr
     settings.downloader.retries = RetryConfig(count=3, delay_seconds=0)
     await ytdlp_manager.setup(settings)
     out_file = Path(tempfile.gettempdir()) / "ssh_fetch_once_test.mp4"
+    # The side_effect drives all 3 attempts (2 errors then success), so
+    # `assert_awaited_once` genuinely distinguishes once-per-download from
+    # per-retry fetch placement. "network blip" matches no private-video
+    # trigger string, so the refresh/restart branch never fires.
     with (
         patch("src.reposter.managers.ytdlp_manager.cookies_cache_path", return_value=tmp_path / "absent.txt"),
         patch("src.reposter.managers.ytdlp_manager.fetch_cookies_via_ssh", new_callable=AsyncMock) as mock_fetch,
@@ -931,11 +935,12 @@ async def test_download_video_fetches_ssh_cookies_once_per_download_not_per_retr
             ytdlp_manager,
             "_wait_for_result_or_shutdown",
             new_callable=AsyncMock,
-            return_value=("success", str(out_file)),
-        ),
+            side_effect=[("error", "network blip"), ("error", "network blip"), ("success", str(out_file))],
+        ) as mock_wait,
     ):
         result = await ytdlp_manager.download_video("https://vk.com/video1.mp4")
     assert result == out_file
+    assert mock_wait.await_count == 3
     mock_fetch.assert_awaited_once()
 
 
@@ -994,7 +999,7 @@ async def test_private_video_triggers_ssh_refresh_instead_of_restart(
 
 @pytest.mark.asyncio
 async def test_ssh_refresh_failure_is_logged_and_loop_continues(
-    ytdlp_manager: YTDLPManager, settings: Settings, tmp_path: Path
+    ytdlp_manager: YTDLPManager, settings: Settings, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ):
     settings.downloader.cookies_via_ssh = CookiesViaSshConfig(enabled=True, host="h", user="u", profile="p")
     settings.downloader.retries = RetryConfig(count=2, delay_seconds=0)
@@ -1020,6 +1025,7 @@ async def test_ssh_refresh_failure_is_logged_and_loop_continues(
         result = await ytdlp_manager.download_video("https://vk.com/video1.mp4")
     assert result == Path("v.mp4")
     mock_restart.assert_not_awaited()
+    assert "Не удалось обновить куки по SSH" in capsys.readouterr().out
 
 
 @pytest.mark.asyncio
