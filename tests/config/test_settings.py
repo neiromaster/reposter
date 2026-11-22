@@ -10,6 +10,7 @@ from pydantic import ValidationError
 from src.reposter.config.settings import (
     BindingConfig,
     BoostyConfig,
+    CookiesViaSshConfig,
     DownloaderConfig,
     RetryConfig,
     Settings,
@@ -250,3 +251,55 @@ class TestDownloaderCookiesSpec:
     def test_empty_spec_rejected(self):
         with pytest.raises(ValidationError):
             DownloaderConfig(cookies_from_browser="   ")
+
+
+class TestCookiesViaSsh:
+    def test_default_disabled(self):
+        config = DownloaderConfig()
+        assert config.cookies_via_ssh.enabled is False
+
+    def test_disabled_partial_config_allowed(self):
+        cfg = CookiesViaSshConfig()
+        assert cfg.enabled is False
+        assert cfg.port == 22
+        assert cfg.extra_ssh_args == []
+
+    def test_enabled_requires_connection_fields(self):
+        with pytest.raises(ValidationError):
+            CookiesViaSshConfig(enabled=True, host="10.0.0.5", user="vasya")  # profile missing
+        with pytest.raises(ValidationError):
+            CookiesViaSshConfig(enabled=True, user="vasya", profile="dev")  # host missing
+        with pytest.raises(ValidationError):
+            CookiesViaSshConfig(enabled=True, host="10.0.0.5", profile="dev")  # user missing
+
+    def test_enabled_full_config_parses(self):
+        cfg = CookiesViaSshConfig(
+            enabled=True,
+            host="10.0.0.5",
+            port=2222,
+            user="vasya",
+            profile="dev",
+            keyfile="C:/keys/id_ed25519",
+            firefox_path="C:/Program Files/Mozilla Firefox/firefox.exe",
+            extra_ssh_args=["-J", "jump@host"],
+        )
+        assert cfg.port == 2222
+        assert cfg.extra_ssh_args == ["-J", "jump@host"]
+
+    def test_settings_yaml_passthrough(self, monkeypatch: MonkeyPatch):
+        monkeypatch.setenv("VK_SERVICE_TOKEN", "test_token")
+        monkeypatch.setenv("TELEGRAM_API_ID", "12345")
+        monkeypatch.setenv("TELEGRAM_API_HASH", "test_hash")
+        with patch("src.reposter.config.settings.Settings.YamlConfigSource") as mock_yaml_source:
+            mock_yaml_source.return_value.return_value = {}
+            settings = Settings(
+                bindings={
+                    "b": BindingConfig(
+                        vk=VKConfig(domain="d"),
+                        telegram=TelegramConfig(channel_ids=["@c"]),
+                    )
+                },
+                downloader={"cookies_via_ssh": {"enabled": True, "host": "h", "user": "u", "profile": "p"}},
+            )  # type: ignore[call-arg]
+        assert settings.downloader.cookies_via_ssh.enabled is True
+        assert settings.downloader.cookies_via_ssh.host == "h"

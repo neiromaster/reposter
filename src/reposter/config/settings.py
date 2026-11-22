@@ -69,6 +69,30 @@ class RetryConfig(BaseModel):
     delay_seconds: int = Field(default=10, ge=0)
 
 
+class CookiesViaSshConfig(BaseModel):
+    """SSH transport for Firefox cookies from a remote (Windows) machine."""
+
+    enabled: bool = Field(
+        default=False,
+        description="Брать куки Firefox с удалённой машины по SSH вместо локального браузера",
+    )
+    host: str = Field(default="", description="Хост или IP машины с Firefox (Windows OpenSSH)")
+    port: int = Field(default=22, ge=1, le=65535)
+    user: str = Field(default="")
+    keyfile: str | None = Field(default=None, description="Путь к приватному ключу; None — дефолтный ключ ssh")
+    profile: str = Field(default="", description="Имя профиля Firefox на удалённой машине")
+    firefox_path: str | None = Field(
+        default=None, description="Путь к firefox.exe на удалённой машине (для обновления куков)"
+    )
+    extra_ssh_args: list[str] = Field(default_factory=list, description="Дополнительные аргументы ssh/scp")
+
+    @model_validator(mode="after")
+    def require_connection_fields(self) -> CookiesViaSshConfig:
+        if self.enabled and not (self.host and self.user and self.profile):
+            raise ValueError("cookies_via_ssh: при enabled=true обязательны host, user и profile")
+        return self
+
+
 class DownloaderConfig(BaseModel):
     browser: Literal["chrome", "firefox", "edge"] = Field(
         default="chrome",
@@ -85,6 +109,13 @@ class DownloaderConfig(BaseModel):
     validate_downloads: bool = Field(
         default=False,
         description="Проверять скачанное видео полным декодированием через ffmpeg перед публикацией",
+    )
+    cookies_via_ssh: CookiesViaSshConfig = Field(
+        default_factory=CookiesViaSshConfig,
+        description=(
+            "Получение куков Firefox с удалённой машины по SSH; "
+            "включённый режим имеет приоритет над cookies_from_browser"
+        ),
     )
 
     @field_validator("cookies_from_browser")
