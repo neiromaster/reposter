@@ -1,4 +1,3 @@
-# pyright: reportUnusedFunction=false
 """Fetches Firefox cookies from a remote Windows machine over SSH.
 
 Copies profiles.ini and cookies.sqlite (+ -wal/-shm) from the remote Firefox
@@ -46,11 +45,15 @@ def _ssh_common_args(cfg: CookiesViaSshConfig) -> list[str]:
     return args
 
 
-def _build_ssh_command(cfg: CookiesViaSshConfig, remote_command: str) -> list[str]:
+def _build_ssh_command(  # type: ignore[reportUnusedFunction]
+    cfg: CookiesViaSshConfig, remote_command: str
+) -> list[str]:
     return ["ssh", "-p", str(cfg.port), *_ssh_common_args(cfg), f"{cfg.user}@{cfg.host}", remote_command]
 
 
-def _build_scp_command(cfg: CookiesViaSshConfig, remote_path: str, local_path: Path) -> list[str]:
+def _build_scp_command(  # type: ignore[reportUnusedFunction]
+    cfg: CookiesViaSshConfig, remote_path: str, local_path: Path
+) -> list[str]:
     # scp spells the port option with a capital -P (lowercase -p preserves mtimes).
     return [
         "scp",
@@ -62,7 +65,7 @@ def _build_scp_command(cfg: CookiesViaSshConfig, remote_path: str, local_path: P
     ]
 
 
-def _build_open_tab_command(cfg: CookiesViaSshConfig) -> str:
+def _build_open_tab_command(cfg: CookiesViaSshConfig) -> str:  # type: ignore[reportUnusedFunction]
     firefox = cfg.firefox_path or "firefox.exe"
     # `start` detaches the process so ssh returns immediately; -headless keeps a
     # fresh instance working in a headless SSH session (harmless when Firefox is
