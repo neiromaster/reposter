@@ -272,6 +272,12 @@ class TestCookiesViaSsh:
         with pytest.raises(ValidationError):
             CookiesViaSshConfig(enabled=True, host="10.0.0.5", profile="dev")  # user missing
 
+    def test_enabled_rejects_out_of_range_port(self):
+        with pytest.raises(ValidationError):
+            CookiesViaSshConfig(enabled=True, host="h", user="u", profile="p", port=0)
+        with pytest.raises(ValidationError):
+            CookiesViaSshConfig(enabled=True, host="h", user="u", profile="p", port=65536)
+
     def test_enabled_full_config_parses(self):
         cfg = CookiesViaSshConfig(
             enabled=True,

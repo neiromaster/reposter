@@ -88,7 +88,7 @@ class CookiesViaSshConfig(BaseModel):
 
     @model_validator(mode="after")
     def require_connection_fields(self) -> CookiesViaSshConfig:
-        if self.enabled and not (self.host and self.user and self.profile):
+        if self.enabled and not (self.host.strip() and self.user.strip() and self.profile.strip()):
             raise ValueError("cookies_via_ssh: при enabled=true обязательны host, user и profile")
         return self
 
