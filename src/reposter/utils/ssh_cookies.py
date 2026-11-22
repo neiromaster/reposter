@@ -97,6 +97,7 @@ def _build_open_tab_command(cfg: CookiesViaSshConfig) -> str:  # type: ignore[re
 
 async def _run_command(args: list[str]) -> str:
     """Runs an ssh/scp command; returns stdout, raises CookieFetchError on failure."""
+    # Bare bound name (not asyncio.create_subprocess_exec) so tests can patch the module attribute.
     proc = await create_subprocess_exec(*args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
     try:
         stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=COMMAND_TIMEOUT_SECONDS)
