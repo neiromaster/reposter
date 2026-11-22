@@ -955,6 +955,7 @@ async def test_private_video_triggers_ssh_refresh_instead_of_restart(
     cache.write_text("stub", encoding="utf-8")
     with (
         patch("src.reposter.managers.ytdlp_manager.cookies_cache_path", return_value=cache),
+        patch("src.reposter.managers.ytdlp_manager.Process"),
         patch.object(
             ytdlp_manager,
             "_wait_for_result_or_shutdown",
@@ -986,6 +987,7 @@ async def test_ssh_refresh_failure_is_logged_and_loop_continues(
             new_callable=AsyncMock,
             side_effect=CookieFetchError("ssh down"),
         ),
+        patch("src.reposter.managers.ytdlp_manager.Process"),
         patch.object(
             ytdlp_manager,
             "_wait_for_result_or_shutdown",
@@ -1004,6 +1006,7 @@ async def test_local_mode_private_video_still_restarts_browser(ytdlp_manager: YT
     settings.downloader.retries = RetryConfig(count=2, delay_seconds=0)
     await ytdlp_manager.setup(settings)
     with (
+        patch("src.reposter.managers.ytdlp_manager.Process"),
         patch.object(
             ytdlp_manager,
             "_wait_for_result_or_shutdown",
