@@ -101,13 +101,17 @@ async def _run_command(args: list[str]) -> str:
     proc = await create_subprocess_exec(*args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
     try:
         stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=COMMAND_TIMEOUT_SECONDS)
-    except BaseException:
+    except BaseException as exc:
         # Never leak a hung child: kill it and reap it before propagating
         # (TimeoutError, CancelledError or anything else) to the caller.
         with contextlib.suppress(OSError):
             proc.kill()
         with contextlib.suppress(BaseException):
             await proc.wait()
+        if isinstance(exc, TimeoutError):
+            # A bare TimeoutError stringifies to "" — wrap it so the manager's
+            # failure log stays diagnosable and optional scp calls can suppress it.
+            raise CookieFetchError(f"{args[0]} превысил таймаут {COMMAND_TIMEOUT_SECONDS} с") from exc
         raise
     if proc.returncode != 0:
         stderr_text = stderr.decode(errors="replace").strip()

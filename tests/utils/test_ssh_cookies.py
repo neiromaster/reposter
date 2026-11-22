@@ -145,6 +145,17 @@ def _make_proc(returncode: int = 0, stdout: bytes = b"", stderr: bytes = b"") ->
     return proc
 
 
+async def _communicate_hang() -> tuple[bytes, bytes]:
+    await asyncio.sleep(10)
+    raise AssertionError("communicate should have been cancelled")
+
+
+async def _communicate_hang_signal(started: asyncio.Event) -> tuple[bytes, bytes]:
+    started.set()
+    await asyncio.sleep(10)
+    raise AssertionError("communicate should have been cancelled")
+
+
 def _cookie_db_bytes(tmp_path: Path, rows: list[tuple[str, str, str, str, int, int, int]] | None = None) -> bytes:
     db = tmp_path / "source-cookies.sqlite"
     con = sqlite3.connect(db)
@@ -199,10 +210,6 @@ async def test_run_command_nonzero_raises_with_stderr():
 
 @pytest.mark.asyncio
 async def test_run_command_timeout_kills_process():
-    async def _communicate_hang():
-        await asyncio.sleep(10)
-        raise AssertionError("communicate should have been cancelled by the timeout")
-
     proc = _make_proc()
     proc.communicate = AsyncMock(side_effect=_communicate_hang)
     with (
@@ -210,9 +217,32 @@ async def test_run_command_timeout_kills_process():
         patch("src.reposter.utils.ssh_cookies.COMMAND_TIMEOUT_SECONDS", 0.05),
     ):
         mock_exec.return_value = proc
-        with pytest.raises(TimeoutError):
+        with pytest.raises(CookieFetchError, match="превысил таймаут"):
             await _run_command(["ssh", "x"])
     assert proc.kill.called
+    proc.wait.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_run_command_cancel_kills_child_and_propagates():
+    started = asyncio.Event()
+    proc = _make_proc()
+
+    # side_effect must be a coroutine function: AsyncMock awaits those, but a
+    # plain lambda's returned coroutine would come back un-awaited as a value.
+    async def _signal_then_hang() -> tuple[bytes, bytes]:
+        return await _communicate_hang_signal(started)
+
+    proc.communicate = AsyncMock(side_effect=_signal_then_hang)
+    with patch("src.reposter.utils.ssh_cookies.create_subprocess_exec", new_callable=AsyncMock) as mock_exec:
+        mock_exec.return_value = proc
+        task = asyncio.create_task(_run_command(["ssh", "x"]))
+        await started.wait()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+    assert proc.kill.called
+    proc.wait.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -303,6 +333,13 @@ def test_read_cookie_rows_filters_expired(tmp_path: Path):
     assert [row.name for row in rows] == ["auth", "lid"]
     assert rows[0].secure is True and rows[0].http_only is True
     assert rows[1].host == ".vk.com"
+
+
+def test_read_cookie_rows_corrupt_db_raises(tmp_path: Path):
+    db = tmp_path / "cookies.sqlite"
+    db.write_bytes(b"garbage")
+    with pytest.raises(CookieFetchError):
+        _read_cookie_rows(db)
 
 
 def test_write_netscape_file_format(tmp_path: Path):
