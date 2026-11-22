@@ -892,3 +892,128 @@ async def test_download_video_continues_when_ssh_fetch_fails(
     ):
         result = await ytdlp_manager.download_video("https://vk.com/video1.mp4")
     assert result == out_file
+
+
+@pytest.mark.asyncio
+async def test_download_video_fetches_ssh_cookies_once_per_download_not_per_retry(
+    ytdlp_manager: YTDLPManager, settings: Settings, tmp_path: Path
+):
+    settings.downloader.cookies_via_ssh = CookiesViaSshConfig(enabled=True, host="h", user="u", profile="p")
+    settings.downloader.retries = RetryConfig(count=3, delay_seconds=0)
+    await ytdlp_manager.setup(settings)
+    out_file = Path(tempfile.gettempdir()) / "ssh_fetch_once_test.mp4"
+    with (
+        patch("src.reposter.managers.ytdlp_manager.cookies_cache_path", return_value=tmp_path / "absent.txt"),
+        patch("src.reposter.managers.ytdlp_manager.fetch_cookies_via_ssh", new_callable=AsyncMock) as mock_fetch,
+        patch("src.reposter.managers.ytdlp_manager.Process"),
+        patch.object(
+            ytdlp_manager,
+            "_wait_for_result_or_shutdown",
+            new_callable=AsyncMock,
+            return_value=("success", str(out_file)),
+        ),
+    ):
+        result = await ytdlp_manager.download_video("https://vk.com/video1.mp4")
+    assert result == out_file
+    mock_fetch.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_download_video_skips_ssh_fetch_when_cache_exists(
+    ytdlp_manager: YTDLPManager, settings: Settings, tmp_path: Path
+):
+    settings.downloader.cookies_via_ssh = CookiesViaSshConfig(enabled=True, host="h", user="u", profile="p")
+    settings.downloader.retries = RetryConfig(count=1, delay_seconds=0)
+    await ytdlp_manager.setup(settings)
+    out_file = Path(tempfile.gettempdir()) / "ssh_fetch_skip_test.mp4"
+    cache = tmp_path / "cache.txt"
+    cache.write_text("stub", encoding="utf-8")
+    with (
+        patch("src.reposter.managers.ytdlp_manager.cookies_cache_path", return_value=cache),
+        patch("src.reposter.managers.ytdlp_manager.fetch_cookies_via_ssh", new_callable=AsyncMock) as mock_fetch,
+        patch("src.reposter.managers.ytdlp_manager.Process"),
+        patch.object(
+            ytdlp_manager,
+            "_wait_for_result_or_shutdown",
+            new_callable=AsyncMock,
+            return_value=("success", str(out_file)),
+        ),
+    ):
+        result = await ytdlp_manager.download_video("https://vk.com/video1.mp4")
+    assert result == out_file
+    mock_fetch.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_private_video_triggers_ssh_refresh_instead_of_restart(
+    ytdlp_manager: YTDLPManager, settings: Settings, tmp_path: Path
+):
+    settings.downloader.cookies_via_ssh = CookiesViaSshConfig(enabled=True, host="h", user="u", profile="p")
+    settings.downloader.retries = RetryConfig(count=2, delay_seconds=0)
+    await ytdlp_manager.setup(settings)
+    cache = tmp_path / "cookies.txt"
+    cache.write_text("stub", encoding="utf-8")
+    with (
+        patch("src.reposter.managers.ytdlp_manager.cookies_cache_path", return_value=cache),
+        patch.object(
+            ytdlp_manager,
+            "_wait_for_result_or_shutdown",
+            new_callable=AsyncMock,
+            side_effect=[("error", "Private video. Sign in to see this video."), ("success", "v.mp4")],
+        ),
+        patch.object(ytdlp_manager, "_refresh_ssh_cookies", new_callable=AsyncMock) as mock_refresh,
+        patch.object(ytdlp_manager, "restart_browser", new_callable=AsyncMock) as mock_restart,
+    ):
+        result = await ytdlp_manager.download_video("https://vk.com/video1.mp4")
+    assert result == Path("v.mp4")
+    mock_refresh.assert_awaited_once()
+    mock_restart.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_ssh_refresh_failure_is_logged_and_loop_continues(
+    ytdlp_manager: YTDLPManager, settings: Settings, tmp_path: Path
+):
+    settings.downloader.cookies_via_ssh = CookiesViaSshConfig(enabled=True, host="h", user="u", profile="p")
+    settings.downloader.retries = RetryConfig(count=2, delay_seconds=0)
+    await ytdlp_manager.setup(settings)
+    cache = tmp_path / "cookies.txt"
+    cache.write_text("stub", encoding="utf-8")
+    with (
+        patch("src.reposter.managers.ytdlp_manager.cookies_cache_path", return_value=cache),
+        patch(
+            "src.reposter.managers.ytdlp_manager.refresh_cookies_via_ssh",
+            new_callable=AsyncMock,
+            side_effect=CookieFetchError("ssh down"),
+        ),
+        patch.object(
+            ytdlp_manager,
+            "_wait_for_result_or_shutdown",
+            new_callable=AsyncMock,
+            side_effect=[("error", "Private video. Sign in to see this video."), ("success", "v.mp4")],
+        ),
+        patch.object(ytdlp_manager, "restart_browser", new_callable=AsyncMock) as mock_restart,
+    ):
+        result = await ytdlp_manager.download_video("https://vk.com/video1.mp4")
+    assert result == Path("v.mp4")
+    mock_restart.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_local_mode_private_video_still_restarts_browser(ytdlp_manager: YTDLPManager, settings: Settings):
+    settings.downloader.retries = RetryConfig(count=2, delay_seconds=0)
+    await ytdlp_manager.setup(settings)
+    with (
+        patch.object(
+            ytdlp_manager,
+            "_wait_for_result_or_shutdown",
+            new_callable=AsyncMock,
+            side_effect=[("error", "Private video. Sign in to see this video."), ("success", "v.mp4")],
+        ),
+        patch.object(ytdlp_manager, "_refresh_ssh_cookies", new_callable=AsyncMock) as mock_refresh,
+        patch.object(ytdlp_manager, "restart_browser", new_callable=AsyncMock) as mock_restart,
+    ):
+        result = await ytdlp_manager.download_video("https://vk.com/video1.mp4")
+    assert result == Path("v.mp4")
+    mock_restart.assert_awaited_once()
+    mock_refresh.assert_not_awaited()

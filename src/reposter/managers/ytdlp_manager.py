@@ -24,7 +24,7 @@ from ..utils.browser import (
     resolve_firefox_profile,
 )
 from ..utils.log import log
-from ..utils.ssh_cookies import cookies_cache_path, fetch_cookies_via_ssh
+from ..utils.ssh_cookies import cookies_cache_path, fetch_cookies_via_ssh, refresh_cookies_via_ssh
 from ..utils.video_validator import ValidationResult, validate_video_file
 
 BROWSER_EXECUTABLES = (
@@ -165,6 +165,22 @@ class YTDLPManager(BaseManager):
             log(f"❌ Не удалось получить куки по SSH: {e}. Продолжаю без куков.", indent=4)
         else:
             log("✅ Куки получены по SSH.", indent=4)
+
+    async def _refresh_ssh_cookies(self) -> None:
+        """Refreshes cookies over SSH: opens a vk.com tab in the remote Firefox, waits, re-fetches."""
+        config = self._downloader_config
+        if config is None:
+            return
+        ssh_cfg = config.cookies_via_ssh
+        try:
+            log(f"🔑 Открываю вкладку vk.com в Firefox на {ssh_cfg.host} для обновления куков...", indent=4)
+            await refresh_cookies_via_ssh(
+                ssh_cfg, cookies_cache_path(), wait_seconds=config.browser_restart_wait_seconds
+            )
+        except Exception as e:
+            log(f"❌ Не удалось обновить куки по SSH: {e}.", indent=4)
+        else:
+            log("✅ Куки обновлены по SSH.", indent=4)
 
     async def __aenter__(self) -> YTDLPManager:
         """Enter the async context manager."""
@@ -351,8 +367,18 @@ class YTDLPManager(BaseManager):
                     or "private video" in error_str
                     or "this video is only available for registered users" in error_str
                 ) and attempt < retries - 1:
-                    log("🔑 Похоже, видео приватное. Пробую перезапустить браузер для обновления cookie...", indent=4)
-                    await self.restart_browser()
+                    if self._ssh_cookies_enabled():
+                        log(
+                            "🔑 Похоже, видео приватное. Обновляю куки по SSH (вкладка vk.com на удалённой машине)...",
+                            indent=4,
+                        )
+                        await self._refresh_ssh_cookies()
+                    else:
+                        log(
+                            "🔑 Похоже, видео приватное. Пробую перезапустить браузер для обновления cookie...",
+                            indent=4,
+                        )
+                        await self.restart_browser()
                     continue
 
             # Generic retry
