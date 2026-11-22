@@ -21,6 +21,7 @@ from src.reposter.utils.ssh_cookies import (
     _write_netscape_file,
     cookies_cache_path,
     fetch_cookies_via_ssh,
+    refresh_cookies_via_ssh,
 )
 
 
@@ -353,3 +354,24 @@ def test_write_netscape_file_format(tmp_path: Path):
     assert lines[0] == "# Netscape HTTP Cookie File"
     assert lines[2] == "#HttpOnly_vk.com\tFALSE\t/\tTRUE\t42\tn\tv"
     assert lines[3] == ".vk.com\tTRUE\t/\tFALSE\t43\tn2\tv2"
+
+
+@pytest.mark.asyncio
+async def test_refresh_opens_tab_then_fetches(tmp_path: Path):
+    cache = tmp_path / "cookies.txt"
+    fake, captured = _fake_run({"profiles.ini": INI_TEXT.encode(), "cookies.sqlite": _cookie_db_bytes(tmp_path)})
+    with patch("src.reposter.utils.ssh_cookies._run_command", side_effect=fake):
+        result = await refresh_cookies_via_ssh(_ssh_cfg(), cache, wait_seconds=0)
+    assert result == cache
+    assert cache.read_text(encoding="utf-8").count("vk.com") >= 1
+    first_command = captured[0]
+    assert first_command[0] == "ssh"
+    assert first_command[-1] == 'cmd /c start "" "firefox.exe" -headless -P "default-release" https://vk.com'
+
+
+@pytest.mark.asyncio
+async def test_refresh_tab_failure_propagates(tmp_path: Path):
+    cache = tmp_path / "cookies.txt"
+    fake, _captured = _fake_run({})  # no files: the tab-open ssh call succeeds, the ini scp fails
+    with patch("src.reposter.utils.ssh_cookies._run_command", side_effect=fake), pytest.raises(CookieFetchError):
+        await refresh_cookies_via_ssh(_ssh_cfg(), cache, wait_seconds=0)

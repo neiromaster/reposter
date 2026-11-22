@@ -69,9 +69,7 @@ def _ssh_common_args(cfg: CookiesViaSshConfig) -> list[str]:
     return args
 
 
-def _build_ssh_command(  # type: ignore[reportUnusedFunction]
-    cfg: CookiesViaSshConfig, remote_command: str
-) -> list[str]:
+def _build_ssh_command(cfg: CookiesViaSshConfig, remote_command: str) -> list[str]:
     return ["ssh", "-p", str(cfg.port), *_ssh_common_args(cfg), f"{cfg.user}@{cfg.host}", remote_command]
 
 
@@ -87,7 +85,7 @@ def _build_scp_command(cfg: CookiesViaSshConfig, remote_path: str, local_path: P
     ]
 
 
-def _build_open_tab_command(cfg: CookiesViaSshConfig) -> str:  # type: ignore[reportUnusedFunction]
+def _build_open_tab_command(cfg: CookiesViaSshConfig) -> str:
     firefox = cfg.firefox_path or "firefox.exe"
     # `start` detaches the process so ssh returns immediately; -headless keeps a
     # fresh instance working in a headless SSH session (harmless when Firefox is
@@ -194,3 +192,10 @@ async def fetch_cookies_via_ssh(cfg: CookiesViaSshConfig, cache_path: Path) -> P
         return cache_path
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+async def refresh_cookies_via_ssh(cfg: CookiesViaSshConfig, cache_path: Path, *, wait_seconds: int) -> Path:
+    """Refreshes cookies: opens vk.com in the remote Firefox, waits, re-fetches."""
+    await _run_command(_build_ssh_command(cfg, _build_open_tab_command(cfg)))
+    await asyncio.sleep(wait_seconds)
+    return await fetch_cookies_via_ssh(cfg, cache_path)
