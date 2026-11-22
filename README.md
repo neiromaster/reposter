@@ -113,6 +113,25 @@ The `browser` field is deprecated: when `cookies_from_browser` is not set it is 
 
 `validate_downloads` (default `false`) runs a full ffmpeg decode of every downloaded video, cross-checks video/audio stream durations and decoded-vs-container duration, and treats truncated or corrupt files as failed download attempts — they are deleted and re-downloaded; if all attempts fail, the post is skipped and retried in the next cycle. Requires `ffmpeg`/`ffprobe` in PATH (skipped with a log warning when absent).
 
+### Cookies over SSH (`cookies_via_ssh`)
+
+When the app runs on a server without a browser, cookies can be fetched from a remote Windows machine over SSH. Requires key-based SSH auth and system `ssh`/`scp` in PATH:
+
+```yaml
+downloader:
+  cookies_via_ssh:
+    enabled: true
+    host: "192.168.1.50"
+    port: 22
+    user: "vasya"
+    # keyfile: "C:/Users/vasya/.ssh/id_ed25519" # omitted = default ssh key
+    profile: "default-release-1" # Firefox profile name on the remote machine
+    # firefox_path: "C:/Program Files/Mozilla Firefox/firefox.exe" # for cookie refresh
+    # extra_ssh_args: ["-J", "jump@host"]
+```
+
+When enabled, this takes priority over `cookies_from_browser`: the app copies `profiles.ini` and `cookies.sqlite` (plus `-wal`/`-shm`) from the remote Firefox directory via `scp`, converts them into a Netscape cookies.txt and passes it to yt-dlp as `cookiefile`. Cookies are fetched lazily before the first download and refreshed on the "private video" trigger by opening a vk.com tab in the remote Firefox (`firefox_path` recommended; `-headless` is added automatically); the same `browser_restart_wait_seconds` pause applies before re-fetching. A failed fetch/refresh is logged and the app keeps running: public posts download without cookies, private ones fail their retries and are retried in the next cycle — posts are never skipped. If the remote machine is rebooted into a logged-out Firefox, the fetch fails with an explicit log message until someone logs into VK there again. `profile` and `firefox_path` values are interpolated verbatim into a double-quoted remote `cmd /c start` string — any legal Windows path or profile name is safe (a `"` character is illegal in Windows filenames anyway). Each ssh/scp call has a 20 s total budget; if transfers routinely stall mid-way, pass `extra_ssh_args: ["-o", "ServerAliveInterval=15", "-o", "ServerAliveCountMax=3"]` so ssh itself detects and reports the dead connection.
+
 ### Obtaining Tokens and Keys
 
 #### Telegram (API ID and API Hash)
