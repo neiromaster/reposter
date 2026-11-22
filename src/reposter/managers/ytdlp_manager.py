@@ -373,6 +373,10 @@ class YTDLPManager(BaseManager):
                             indent=4,
                         )
                         await self._refresh_ssh_cookies()
+                        # A successful refresh must reach the remaining retries even
+                        # when opts were built before any cache file existed.
+                        if cookies_cache_path().is_file():
+                            ydl_opts.setdefault("cookiefile", str(cookies_cache_path()))
                     else:
                         log(
                             "🔑 Похоже, видео приватное. Пробую перезапустить браузер для обновления cookie...",

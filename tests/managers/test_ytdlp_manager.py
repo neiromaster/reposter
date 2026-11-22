@@ -1023,6 +1023,58 @@ async def test_ssh_refresh_failure_is_logged_and_loop_continues(
 
 
 @pytest.mark.asyncio
+async def test_refreshed_cookies_reach_retries_when_initial_fetch_failed(
+    ytdlp_manager: YTDLPManager, settings: Settings, tmp_path: Path
+):
+    settings.downloader.cookies_via_ssh = CookiesViaSshConfig(enabled=True, host="h", user="u", profile="p")
+    settings.downloader.retries = RetryConfig(count=2, delay_seconds=0)
+    await ytdlp_manager.setup(settings)
+    cache = tmp_path / "late-cache.txt"
+
+    async def _create_cache(*_args: Any, **_kwargs: Any) -> Path:
+        cache.write_text("fresh", encoding="utf-8")
+        return cache
+
+    # download_video passes the SAME opts dict to every Process call and the
+    # refresh mutates it in place, so call_args_list would show the mutated
+    # dict for both attempts. Snapshot the opts each attempt actually got.
+    opts_per_attempt: list[dict[str, Any]] = []
+
+    def _spawn(*_args: Any, **kwargs: Any) -> MagicMock:
+        opts_per_attempt.append(dict(kwargs["args"][1]))
+        proc = MagicMock()
+        proc.is_alive.return_value = False
+        return proc
+
+    with (
+        patch("src.reposter.managers.ytdlp_manager.cookies_cache_path", return_value=cache),
+        patch(
+            "src.reposter.managers.ytdlp_manager.fetch_cookies_via_ssh",
+            new_callable=AsyncMock,
+            side_effect=CookieFetchError("down at start"),
+        ),
+        patch(
+            "src.reposter.managers.ytdlp_manager.refresh_cookies_via_ssh",
+            new_callable=AsyncMock,
+            side_effect=_create_cache,
+        ),
+        patch("src.reposter.managers.ytdlp_manager.Process", side_effect=_spawn) as mock_process_cls,
+        patch.object(
+            ytdlp_manager,
+            "_wait_for_result_or_shutdown",
+            new_callable=AsyncMock,
+            side_effect=[("error", "Private video. Sign in to see this video."), ("success", "v.mp4")],
+        ),
+        patch.object(ytdlp_manager, "restart_browser", new_callable=AsyncMock),
+    ):
+        result = await ytdlp_manager.download_video("https://vk.com/video1.mp4")
+    assert result == Path("v.mp4")
+    assert mock_process_cls.call_count == 2
+    assert "cookiefile" not in opts_per_attempt[0]
+    assert opts_per_attempt[1]["cookiefile"] == str(cache)
+
+
+@pytest.mark.asyncio
 async def test_local_mode_private_video_still_restarts_browser(ytdlp_manager: YTDLPManager, settings: Settings):
     settings.downloader.retries = RetryConfig(count=2, delay_seconds=0)
     await ytdlp_manager.setup(settings)
